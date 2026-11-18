@@ -1,0 +1,6 @@
+{
+  "name": "SIAKAD & Manajemen Sekolah — SMP Kristen Waibakul",
+  "description": "Sistem Informasi Akademik Terpadu, Penilaian Kurikulum, Kokurikuler (P5), Wali Kelas & Manajemen Sekolah SMP Kristen Waibakul.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

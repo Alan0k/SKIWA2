@@ -1,0 +1,435 @@
+export const APP_CONFIG = {
+  SCHOOL_NAME: 'SMP KRISTEN WAIBAKUL',
+  SCHOOL_ADDRESS: 'Jl. Trans Sumba, Waibakul, Kec. Katiku Tana, Kab. Sumba Tengah, NTT',
+  SCHOOL_NPSN: '50304109',
+  HEADMASTER_NAME: 'Pdt. Kornelis Umbu Tay, S.Th., M.Pd.',
+  HEADMASTER_NIP: '19750412 200501 1 009',
+  DEFAULT_YEAR: '2026/2027',
+  DEFAULT_SEMESTER: 'Ganjil',
+};
+
+export interface SettingDef {
+  key: string;
+  description: string;
+  def: string;
+}
+
+export const SCHOOL_SETTING_DEFS: SettingDef[] = [
+  { key: 'school_name',          description: 'Nama Satuan Pendidikan',            def: APP_CONFIG.SCHOOL_NAME },
+  { key: 'school_npsn',          description: 'NPSN',                              def: '50304088' },
+  { key: 'school_nss',           description: 'NSS (Nomor Statistik Sekolah)',     def: '' },
+  { key: 'school_status',        description: 'Status Sekolah (Negeri/Swasta)',    def: 'Swasta' },
+  { key: 'school_accreditation', description: 'Akreditasi Sekolah',                def: '' },
+  { key: 'school_foundation',    description: 'Nama Yayasan / Penyelenggara',      def: 'YAYASAN PENDIDIKAN MASEHI SUMBA (YAPKRIS)' },
+  { key: 'school_address',       description: 'Alamat Sekolah',                    def: APP_CONFIG.SCHOOL_ADDRESS },
+  { key: 'school_regency',       description: 'Kabupaten / Kota',                  def: 'Kabupaten Sumba Tengah' },
+  { key: 'school_province',      description: 'Provinsi',                          def: 'Nusa Tenggara Timur' },
+  { key: 'school_postal_code',   description: 'Kode Pos',                          def: '' },
+  { key: 'school_phone',         description: 'Telepon Sekolah',                   def: '' },
+  { key: 'school_email',         description: 'Email Sekolah',                     def: '' },
+  { key: 'school_website',       description: 'Website Sekolah',                   def: '' },
+  { key: 'headmaster_name',      description: 'Nama Kepala Sekolah',               def: 'Pdt. Kornelis Umbu Tay, S.Th., M.Pd.' },
+  { key: 'headmaster_nip',       description: 'NIP Kepala Sekolah',                def: '19750412 200501 1 009' },
+  { key: 'academic_year',        description: 'Tahun Ajaran Aktif',                def: APP_CONFIG.DEFAULT_YEAR },
+  { key: 'active_semester',      description: 'Semester Aktif',                    def: APP_CONFIG.DEFAULT_SEMESTER },
+  { key: 'curriculum_name',      description: 'Nama Kurikulum',                    def: 'Kurikulum Nasional' },
+  { key: 'jp_duration_minutes',  description: 'Durasi 1 Jam Pelajaran (Menit)',    def: '40' },
+  { key: 'report_place',         description: 'Tempat Penandatanganan Dokumen',    def: 'Waibakul' },
+  { key: 'school_logo_left',     description: 'Logo Kop Surat (Kiri) - data gambar', def: '' },
+  { key: 'school_logo_right',    description: 'Logo Kop Surat (Kanan) - data gambar', def: '' },
+  { key: 'report_date',          description: 'Tanggal Pembagian Raport',          def: '2026-12-18' },
+];
+
+export const SCHEMA_DEF: Record<string, string[]> = {
+  Users: ['id', 'username', 'password', 'full_name', 'nip', 'role', 'avatar_initials', 'phone', 'status'],
+  Classes: ['id', 'name', 'grade_level', 'wali_kelas_id', 'kkm', 'academic_year'],
+  Subjects: ['id', 'code', 'name', 'phase', 'jp_per_week'],
+  Students: ['id', 'nis', 'nisn', 'full_name', 'gender', 'class_id', 'parent_name', 'parent_phone', 'guru_wali_id', 'literacy_level', 'numeracy_level', 'dream_job', 'status'],
+  TeacherClasses: ['id', 'teacher_id', 'class_id', 'subject_id', 'academic_year', 'semester'],
+  TeacherJabatans: ['id', 'teacher_id', 'jabatan_name', 'role_key', 'target_id', 'sk_number', 'tmt_date', 'jp_eq', 'status'],
+  CpAtp_Prota: ['id', 'subject_id', 'grade_level', 'phase', 'element', 'atp_code', 'tp_text', 'scope_material', 'semester', 'jp_allocation', 'meeting_count', 'week_number'],
+  AttendanceSessions: ['id', 'teacher_class_id', 'class_id', 'subject_id', 'teacher_id', 'session_type', 'atp_id', 'atp_code', 'title', 'session_date', 'kbm_activities', 'kbm_problems', 'kbm_solutions'],
+  AttendanceRecords: ['id', 'session_id', 'student_id', 'status', 'score', 'predicate', 'note'],
+  JurnalMengajar: ['id', 'teacher_id', 'class_id', 'subject_id', 'session_id', 'journal_date', 'meeting_no', 'tp_text', 'material', 'activities', 'h_count', 's_count', 'i_count', 'a_count', 'attendance_pct', 'problems_solutions'],
+  JadwalPelajaran: ['id', 'teacher_id', 'class_id', 'subject_id', 'day_name', 'start_time', 'jp_count', 'room_note'],
+  AttitudeAspects: ['id', 'name', 'description'],
+  JamPelajaran: ['id', 'slot_no', 'start_time', 'end_time', 'label'],
+  JadwalKelas: ['id', 'day_name', 'slot_no', 'class_id', 'subject_id', 'teacher_id'],
+  AbsensiHarian: ['id', 'absen_date', 'class_id', 'student_id', 'status', 'note', 'recorded_by'],
+  StatusNilai: ['id', 'teacher_class_id', 'class_id', 'subject_id', 'status', 'approved_by', 'approved_at'],
+  AttitudeRatings: ['id', 'class_id', 'subject_id', 'teacher_id', 'student_id', 'aspect_id', 'score'],
+  Ekstrakurikuler: ['id', 'name', 'coach_id', 'schedule', 'is_mandatory', 'description'],
+  EkskulAssessments: ['id', 'ekskul_id', 'student_id', 'predicate', 'note', 'semester'],
+  KokurikulerProjects: ['id', 'title', 'theme', 'description', 'dimensions', 'target_classes', 'coordinator_id', 'facilitator_ids', 'schedule_block', 'academic_year', 'status'],
+  KokurikulerEvaluations: ['id', 'project_id', 'student_id', 'class_id', 'dimension_scores', 'final_predicate', 'note', 'reviewed_by'],
+  GuruWaliRecords: ['id', 'guru_wali_id', 'student_id', 'semester', 'disiplin', 'kemandirian', 'kejujuran', 'relasi_sosial', 'spiritual', 'keaktifan', 'hab_bangun_pagi', 'hab_beribadah', 'hab_berolahraga', 'hab_makan_sehat', 'hab_gemar_belajar', 'hab_bermasyarakat', 'hab_tidur_cepat', 'note', 'recommendation'],
+  AdditionalAssignments: ['id', 'category', 'title', 'pj_id', 'member_ids', 'sk_number', 'location', 'start_date', 'end_date', 'status'],
+  PelanggaranSiswa: ['id', 'student_id', 'reporter_id', 'incident_date', 'category', 'description', 'points', 'sanction', 'status'],
+  PrestasiSiswa: ['id', 'student_id', 'title', 'level', 'rank', 'event_date', 'organizer'],
+  OsisMembers: ['id', 'student_id', 'position', 'division', 'period', 'status'],
+  PembiasaanKarakter: ['id', 'activity_date', 'activity_name', 'category', 'coordinator_id', 'participation_pct', 'note'],
+  KaldikEvents: ['id', 'start_date', 'end_date', 'title', 'category', 'description'],
+  SupervisiGuru: ['id', 'teacher_id', 'supervisor_id', 'supervision_date', 'subject_id', 'has_modul', 'has_atp', 'has_asesmen', 'has_jurnal', 'score', 'feedback'],
+  KemitraanKomite: ['id', 'agenda_date', 'topic', 'participants', 'decision', 'status'],
+  MouKerjasama: ['id', 'partner_name', 'scope', 'start_date', 'end_date', 'pic_name', 'status'],
+  PublikasiSekolah: ['id', 'pub_date', 'title', 'channel', 'author_id', 'summary'],
+  BukuTamu: ['id', 'visit_date', 'guest_name', 'institution', 'purpose', 'met_with'],
+  InventarisRuang: ['id', 'room_code', 'room_name', 'condition', 'capacity', 'pic_name'],
+  BarangSarpras: ['id', 'item_code', 'item_name', 'room_id', 'quantity', 'condition', 'source_fund'],
+  TiketPerbaikan: ['id', 'report_date', 'reporter_id', 'item_name', 'location', 'issue_desc', 'priority', 'status'],
+  PeminjamanSarpras: ['id', 'borrow_date', 'return_date', 'borrower_name', 'item_name', 'quantity', 'purpose', 'status'],
+  Announcements: ['id', 'created_at', 'author_id', 'author_name', 'category', 'priority', 'is_pinned', 'title', 'content'],
+  ActivityLogs: ['id', 'timestamp', 'user_id', 'user_name', 'role', 'action', 'detail'],
+  KehadiranGTK: ['id', 'tanggal', 'nama', 'jabatan', 'jam_masuk', 'jam_pulang', 'status', 'keterangan', 'user_id', 'sumber'],
+  RolePermissions: ['role', 'allowed_menus', 'can_edit'],
+  Settings: ['key', 'value', 'description'],
+};
+
+export function addMinutes(hhmm: string, minutes: number): string {
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(hhmm || ''));
+  if (!m) return '';
+  const t = Number(m[1]) * 60 + Number(m[2]) + Number(minutes || 0);
+  const h = Math.floor(t / 60) % 24;
+  const mm = t % 60;
+  return ('0' + h).slice(-2) + ':' + ('0' + mm).slice(-2);
+}
+
+export function createDefaultJamPelajaran(dur = 40): Record<string, any>[] {
+  const rows: Record<string, any>[] = [];
+  for (let i = 1; i <= 8; i++) {
+    const st = addMinutes('07:30', (i - 1) * dur);
+    rows.push({
+      id: 'JAM-' + i,
+      slot_no: i,
+      start_time: st,
+      end_time: addMinutes(st, dur),
+      label: '',
+    });
+  }
+  return rows;
+}
+
+export function formatMakassarTimestamp(d = new Date()): string {
+  const formatter = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Makassar',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+  return formatter.format(d).replace('T', ' ');
+}
+
+export function createInitialSeedData(): Record<string, Record<string, any>[]> {
+  const db: Record<string, Record<string, any>[]> = {};
+  Object.keys(SCHEMA_DEF).forEach(k => {
+    db[k] = [];
+  });
+
+  db.Settings = SCHOOL_SETTING_DEFS.map(d => ({
+    key: d.key,
+    value: d.def,
+    description: d.description,
+  }));
+
+  db.Users = [
+    { id: 'USR-ADM', username: 'admin', password: '123456', full_name: 'Melkianus Lede, S.Kom.', nip: '19900514 201903 1 004', role: 'admin', avatar_initials: 'ML', phone: '081239001101', status: 'Aktif' },
+    { id: 'USR-KS', username: 'kepsek', password: '123456', full_name: 'Pdt. Kornelis Umbu Tay, S.Th., M.Pd.', nip: '19750412 200501 1 009', role: 'kepala_sekolah', avatar_initials: 'KU', phone: '081239001102', status: 'Aktif' },
+    { id: 'USR-G01', username: 'yohanes.um', password: '123456', full_name: 'Yohanes Umbu Deta, S.Pd.', nip: '19840718 201001 1 012', role: 'guru', avatar_initials: 'YU', phone: '081239001103', status: 'Aktif' },
+    { id: 'USR-G02', username: 'maria.rambu', password: '123456', full_name: 'Maria Rambu Bangi, S.Pd., Gr.', nip: '19881103 201402 2 005', role: 'guru', avatar_initials: 'MR', phone: '081239001104', status: 'Aktif' },
+    { id: 'USR-G03', username: 'petrus.kadi', password: '123456', full_name: 'Petrus Kadi Wanandi, S.Pd.', nip: '19860221 201101 1 008', role: 'guru', avatar_initials: 'PK', phone: '081239001105', status: 'Aktif' },
+    { id: 'USR-G04', username: 'ester.lende', password: '123456', full_name: 'Ester Lende Bora, S.Pd.', nip: '19910915 201803 2 007', role: 'guru', avatar_initials: 'EL', phone: '081239001106', status: 'Aktif' },
+    { id: 'USR-G05', username: 'damianus.ng', password: '123456', full_name: 'Damianus Ngongo Bili, S.Si.', nip: '19890310 201502 1 003', role: 'guru', avatar_initials: 'DN', phone: '081239001107', status: 'Aktif' },
+    { id: 'USR-G06', username: 'naomi.tamu', password: '123456', full_name: 'Naomi Tamu Ina, S.Th.', nip: '19870625 201212 2 002', role: 'guru', avatar_initials: 'NT', phone: '081239001108', status: 'Aktif' },
+    { id: 'USR-TDK01', username: 'rudi.tendik', password: '123456', full_name: 'Rudi Hartono, A.Md.', nip: '19930812 202203 1 006', role: 'tendik', avatar_initials: 'RH', phone: '081239001110', status: 'Aktif' },
+    { id: 'USR-P5', username: 'admin.p5', password: '123456', full_name: 'Debora Rambu Ngana, S.Pd.', nip: '19920119 202012 2 011', role: 'admin_kokurikuler', avatar_initials: 'DR', phone: '081239001109', status: 'Aktif' },
+    { id: 'USR-WM01', username: 'ortu.001', password: '123456', full_name: 'Bpk. Lukas Umbu (Wali dari Markus Umbu)', nip: 'STD-001', role: 'wali_murid', avatar_initials: 'LU', phone: '085239112201', status: 'Aktif' },
+  ];
+
+  db.Classes = [
+    { id: 'CLS-7A', name: '7A', grade_level: '7', wali_kelas_id: 'USR-G01', kkm: 75, academic_year: '2026/2027' },
+    { id: 'CLS-7B', name: '7B', grade_level: '7', wali_kelas_id: 'USR-G02', kkm: 75, academic_year: '2026/2027' },
+    { id: 'CLS-8A', name: '8A', grade_level: '8', wali_kelas_id: 'USR-G05', kkm: 75, academic_year: '2026/2027' },
+    { id: 'CLS-9A', name: '9A', grade_level: '9', wali_kelas_id: 'USR-G06', kkm: 75, academic_year: '2026/2027' },
+  ];
+
+  db.Subjects = [
+    { id: 'SUB-PAK', code: 'PAK', name: 'Pendidikan Agama Kristen & Budi Pekerti', phase: 'D', jp_per_week: 3 },
+    { id: 'SUB-BIN', code: 'BIN', name: 'Bahasa Indonesia', phase: 'D', jp_per_week: 6 },
+    { id: 'SUB-MTK', code: 'MTK', name: 'Matematika', phase: 'D', jp_per_week: 5 },
+    { id: 'SUB-IPA', code: 'IPA', name: 'Ilmu Pengetahuan Alam (IPA)', phase: 'D', jp_per_week: 5 },
+    { id: 'SUB-IPS', code: 'IPS', name: 'Ilmu Pengetahuan Sosial (IPS)', phase: 'D', jp_per_week: 4 },
+    { id: 'SUB-BIG', code: 'BIG', name: 'Bahasa Inggris', phase: 'D', jp_per_week: 4 },
+    { id: 'SUB-PJK', code: 'PJOK', name: 'Pendidikan Jasmani, Olahraga & Kesehatan', phase: 'D', jp_per_week: 3 },
+    { id: 'SUB-PPK', code: 'PPKn', name: 'Pendidikan Pancasila', phase: 'D', jp_per_week: 3 },
+  ];
+
+  db.TeacherJabatans = [
+    { id: 'JAB-01', teacher_id: 'USR-G01', jabatan_name: 'Wakil Kepala Sekolah Bidang Kurikulum', role_key: 'waka_kurikulum', target_id: '', sk_number: '421.3/014/SMPK-WBK/VII/2026', tmt_date: '2026-07-13', jp_eq: 12, status: 'Aktif' },
+    { id: 'JAB-02', teacher_id: 'USR-G01', jabatan_name: 'Wali Kelas 7A', role_key: 'wali_kelas', target_id: 'CLS-7A', sk_number: '421.3/015/SMPK-WBK/VII/2026', tmt_date: '2026-07-13', jp_eq: 2, status: 'Aktif' },
+    { id: 'JAB-03', teacher_id: 'USR-G01', jabatan_name: 'Koordinator Proyek P5 Kelas 7', role_key: 'admin_kokurikuler', target_id: 'PRJ-01', sk_number: '421.3/019/SMPK-WBK/VII/2026', tmt_date: '2026-07-13', jp_eq: 2, status: 'Aktif' },
+    { id: 'JAB-04', teacher_id: 'USR-G02', jabatan_name: 'Wakil Kepala Sekolah Bidang Kesiswaan', role_key: 'waka_kesiswaan', target_id: '', sk_number: '421.3/014/SMPK-WBK/VII/2026', tmt_date: '2026-07-13', jp_eq: 12, status: 'Aktif' },
+    { id: 'JAB-05', teacher_id: 'USR-G02', jabatan_name: 'Wali Kelas 7B', role_key: 'wali_kelas', target_id: 'CLS-7B', sk_number: '421.3/015/SMPK-WBK/VII/2026', tmt_date: '2026-07-13', jp_eq: 2, status: 'Aktif' },
+    { id: 'JAB-06', teacher_id: 'USR-G03', jabatan_name: 'Wakil Kepala Sekolah Bidang Sarpras', role_key: 'waka_sarpras', target_id: '', sk_number: '421.3/014/SMPK-WBK/VII/2026', tmt_date: '2026-07-13', jp_eq: 12, status: 'Aktif' },
+    { id: 'JAB-07', teacher_id: 'USR-G04', jabatan_name: 'Wakil Kepala Sekolah Bidang Humas', role_key: 'waka_humas', target_id: '', sk_number: '421.3/014/SMPK-WBK/VII/2026', tmt_date: '2026-07-13', jp_eq: 12, status: 'Aktif' },
+    { id: 'JAB-08', teacher_id: 'USR-G05', jabatan_name: 'Wali Kelas 8A', role_key: 'wali_kelas', target_id: 'CLS-8A', sk_number: '421.3/015/SMPK-WBK/VII/2026', tmt_date: '2026-07-13', jp_eq: 2, status: 'Aktif' },
+    { id: 'JAB-09', teacher_id: 'USR-G06', jabatan_name: 'Wali Kelas 9A', role_key: 'wali_kelas', target_id: 'CLS-9A', sk_number: '421.3/015/SMPK-WBK/VII/2026', tmt_date: '2026-07-13', jp_eq: 2, status: 'Aktif' },
+  ];
+
+  db.TeacherClasses = [
+    { id: 'TC-01', teacher_id: 'USR-G01', class_id: 'CLS-7A', subject_id: 'SUB-IPA', academic_year: '2026/2027', semester: 'Ganjil' },
+    { id: 'TC-02', teacher_id: 'USR-G01', class_id: 'CLS-7B', subject_id: 'SUB-IPA', academic_year: '2026/2027', semester: 'Ganjil' },
+    { id: 'TC-03', teacher_id: 'USR-G02', class_id: 'CLS-7A', subject_id: 'SUB-BIN', academic_year: '2026/2027', semester: 'Ganjil' },
+    { id: 'TC-04', teacher_id: 'USR-G02', class_id: 'CLS-7B', subject_id: 'SUB-BIN', academic_year: '2026/2027', semester: 'Ganjil' },
+    { id: 'TC-05', teacher_id: 'USR-G05', class_id: 'CLS-7A', subject_id: 'SUB-MTK', academic_year: '2026/2027', semester: 'Ganjil' },
+    { id: 'TC-06', teacher_id: 'USR-G05', class_id: 'CLS-8A', subject_id: 'SUB-MTK', academic_year: '2026/2027', semester: 'Ganjil' },
+    { id: 'TC-07', teacher_id: 'USR-G04', class_id: 'CLS-7A', subject_id: 'SUB-IPS', academic_year: '2026/2027', semester: 'Ganjil' },
+    { id: 'TC-08', teacher_id: 'USR-G03', class_id: 'CLS-7A', subject_id: 'SUB-PJK', academic_year: '2026/2027', semester: 'Ganjil' },
+    { id: 'TC-09', teacher_id: 'USR-G06', class_id: 'CLS-7A', subject_id: 'SUB-PAK', academic_year: '2026/2027', semester: 'Ganjil' },
+    { id: 'TC-10', teacher_id: 'USR-G06', class_id: 'CLS-9A', subject_id: 'SUB-PAK', academic_year: '2026/2027', semester: 'Ganjil' },
+  ];
+
+  db.Students = [
+    { id: 'STD-001', nis: '2627001', nisn: '0134589001', full_name: 'Markus Umbu Pati', gender: 'L', class_id: 'CLS-7A', parent_name: 'Lukas Umbu', parent_phone: '085239112201', guru_wali_id: 'USR-G01', literacy_level: 'Cakap', numeracy_level: 'Cakap', dream_job: 'Dokter', status: 'Aktif' },
+    { id: 'STD-002', nis: '2627002', nisn: '0134589002', full_name: 'Elsi Rambu Kahi', gender: 'P', class_id: 'CLS-7A', parent_name: 'Daniel Kahi', parent_phone: '085239112202', guru_wali_id: 'USR-G01', literacy_level: 'Sangat Cakap', numeracy_level: 'Cakap', dream_job: 'Guru', status: 'Aktif' },
+    { id: 'STD-003', nis: '2627003', nisn: '0134589003', full_name: 'Yulius Ndapa Doda', gender: 'L', class_id: 'CLS-7A', parent_name: 'Marthen Ndapa', parent_phone: '085239112203', guru_wali_id: 'USR-G02', literacy_level: 'Berkembang', numeracy_level: 'Berkembang', dream_job: 'Tentara / TNI', status: 'Aktif' },
+    { id: 'STD-004', nis: '2627004', nisn: '0134589004', full_name: 'Martha Rambu Podu', gender: 'P', class_id: 'CLS-7A', parent_name: 'Stepanus Podu', parent_phone: '085239112204', guru_wali_id: 'USR-G04', literacy_level: 'Cakap', numeracy_level: 'Sangat Cakap', dream_job: 'Insinyur Sipil', status: 'Aktif' },
+    { id: 'STD-005', nis: '2627005', nisn: '0134589005', full_name: 'Kristian Bili Lende', gender: 'L', class_id: 'CLS-7A', parent_name: 'Andreas Bili', parent_phone: '085239112205', guru_wali_id: 'USR-G01', literacy_level: 'Cakap', numeracy_level: 'Berkembang', dream_job: 'Pendeta', status: 'Aktif' },
+    { id: 'STD-006', nis: '2627006', nisn: '0134589006', full_name: 'Febriana Tamu Apu', gender: 'P', class_id: 'CLS-7B', parent_name: 'Simon Apu', parent_phone: '085239112206', guru_wali_id: 'USR-G02', literacy_level: 'Cakap', numeracy_level: 'Cakap', dream_job: 'Perawat', status: 'Aktif' },
+    { id: 'STD-007', nis: '2627007', nisn: '0134589007', full_name: 'Oktavianus Umbu Zogara', gender: 'L', class_id: 'CLS-7B', parent_name: 'Ruben Zogara', parent_phone: '085239112207', guru_wali_id: 'USR-G03', literacy_level: 'Berkembang', numeracy_level: 'Cakap', dream_job: 'Atlet Sepak Bola', status: 'Aktif' },
+    { id: 'STD-008', nis: '2526011', nisn: '0124589011', full_name: 'Agustina Rambu Lika', gender: 'P', class_id: 'CLS-8A', parent_name: 'Paulus Lika', parent_phone: '085239112208', guru_wali_id: 'USR-G05', literacy_level: 'Sangat Cakap', numeracy_level: 'Cakap', dream_job: 'Akuntan', status: 'Aktif' },
+    { id: 'STD-009', nis: '2425021', nisn: '0114589021', full_name: 'Samuel Kadi Daku', gender: 'L', class_id: 'CLS-9A', parent_name: 'Nikodemus Daku', parent_phone: '085239112209', guru_wali_id: 'USR-G06', literacy_level: 'Cakap', numeracy_level: 'Cakap', dream_job: 'Programmer', status: 'Aktif' },
+  ];
+
+  db.CpAtp_Prota = [
+    { id: 'ATP-01', subject_id: 'SUB-IPA', grade_level: '7', phase: 'D', element: 'Pemahaman IPA', atp_code: 'IPA.7.1', tp_text: 'Memahami hakikat ilmu sains, alat laboratorium, serta merancang percobaan ilmiah sederhana.', scope_material: 'Hakikat Ilmu Sains & Metode Ilmiah', semester: 'Ganjil', jp_allocation: 10, meeting_count: 3, week_number: '1-3' },
+    { id: 'ATP-02', subject_id: 'SUB-IPA', grade_level: '7', phase: 'D', element: 'Pemahaman IPA', atp_code: 'IPA.7.2', tp_text: 'Menganalisis perubahan wujud zat, massa jenis, serta pemisahan campuran dalam kehidupan sehari-hari.', scope_material: 'Zat dan Perubahannya', semester: 'Ganjil', jp_allocation: 15, meeting_count: 4, week_number: '4-7' },
+    { id: 'ATP-03', subject_id: 'SUB-IPA', grade_level: '7', phase: 'D', element: 'Keterampilan Proses', atp_code: 'IPA.7.3', tp_text: 'Mengukur suhu benda dan menghitung kalor serta perpindahannya pada peristiwa sehari-hari.', scope_material: 'Suhu, Kalor dan Pemuaian', semester: 'Ganjil', jp_allocation: 15, meeting_count: 4, week_number: '8-11' },
+    { id: 'ATP-04', subject_id: 'SUB-BIN', grade_level: '7', phase: 'D', element: 'Menyimak & Membaca', atp_code: 'BIN.7.1', tp_text: 'Mengidentifikasi struktur dan kaidah kebahasaan teks deskripsi tentang keindahan alam Sumba Tengah.', scope_material: 'Teks Deskripsi', semester: 'Ganjil', jp_allocation: 18, meeting_count: 4, week_number: '1-4' },
+    { id: 'ATP-05', subject_id: 'SUB-MTK', grade_level: '7', phase: 'D', element: 'Bilangan', atp_code: 'MTK.7.1', tp_text: 'Menyelesaikan operasi hitung bilangan bulat dan pecahan dalam pemecahan masalah kontekstual.', scope_material: 'Bilangan Bulat & Pecahan', semester: 'Ganjil', jp_allocation: 20, meeting_count: 5, week_number: '1-5' },
+    { id: 'ATP-06', subject_id: 'SUB-PAK', grade_level: '7', phase: 'D', element: 'Allah Berkarya', atp_code: 'PAK.7.1', tp_text: 'Menghayati pemeliharaan Allah dalam kehidupan manusia dan alam ciptaan-Nya di tanah Sumba.', scope_material: 'Allah Memelihara Ciptaan-Nya', semester: 'Ganjil', jp_allocation: 12, meeting_count: 4, week_number: '1-4' },
+  ];
+
+  db.AttendanceSessions = [
+    { id: 'SES-01', teacher_class_id: 'TC-01', class_id: 'CLS-7A', subject_id: 'SUB-IPA', teacher_id: 'USR-G01', session_type: 'NH', atp_id: 'ATP-01', atp_code: 'IPA.7.1', title: 'NH 1: Pengukuran & Metode Ilmiah', session_date: '2026-08-10', kbm_activities: 'Diskusi Kelompok, Praktik/Demonstrasi', kbm_problems: 'Beberapa siswa masih ragu membaca skala jangka sorong.', kbm_solutions: 'Pendampingan praktikum berkelompok dan latihan soal.' },
+    { id: 'SES-02', teacher_class_id: 'TC-01', class_id: 'CLS-7A', subject_id: 'SUB-IPA', teacher_id: 'USR-G01', session_type: 'NH', atp_id: 'ATP-02', atp_code: 'IPA.7.2', title: 'NH 2: Perubahan Fisika & Kimia', session_date: '2026-09-07', kbm_activities: 'Ceramah Interaktif, Praktik/Demonstrasi, Asesmen Formatif', kbm_problems: 'Tidak ada kendala berarti.', kbm_solutions: 'Pengayaan materi massa jenis.' },
+    { id: 'SES-03', teacher_class_id: 'TC-01', class_id: 'CLS-7A', subject_id: 'SUB-IPA', teacher_id: 'USR-G01', session_type: 'STS', atp_id: 'ATP-02', atp_code: 'IPA.7.2', title: 'Sumatif Tengah Semester Ganjil', session_date: '2026-10-05', kbm_activities: 'Asesmen Formatif', kbm_problems: '', kbm_solutions: '' },
+    { id: 'SES-04', teacher_class_id: 'TC-03', class_id: 'CLS-7A', subject_id: 'SUB-BIN', teacher_id: 'USR-G02', session_type: 'NH', atp_id: 'ATP-04', atp_code: 'BIN.7.1', title: 'NH 1: Menulis Teks Deskripsi', session_date: '2026-08-14', kbm_activities: 'Presentasi, Penugasan', kbm_problems: '', kbm_solutions: '' },
+    { id: 'SES-05', teacher_class_id: 'TC-05', class_id: 'CLS-7A', subject_id: 'SUB-MTK', teacher_id: 'USR-G05', session_type: 'NH', atp_id: 'ATP-05', atp_code: 'MTK.7.1', title: 'NH 1: Operasi Bilangan Bulat', session_date: '2026-08-18', kbm_activities: 'Diskusi Kelompok, Penugasan', kbm_problems: '', kbm_solutions: '' },
+  ];
+
+  db.AttendanceRecords = [
+    { id: 'REC-01', session_id: 'SES-01', student_id: 'STD-001', status: 'H', score: 88, predicate: 'B+', note: '' },
+    { id: 'REC-02', session_id: 'SES-01', student_id: 'STD-002', status: 'H', score: 94, predicate: 'A', note: '' },
+    { id: 'REC-03', session_id: 'SES-01', student_id: 'STD-003', status: 'H', score: 78, predicate: 'B-', note: '' },
+    { id: 'REC-04', session_id: 'SES-01', student_id: 'STD-004', status: 'H', score: 85, predicate: 'B+', note: '' },
+    { id: 'REC-05', session_id: 'SES-01', student_id: 'STD-005', status: 'S', score: 80, predicate: 'B', note: 'Susulan' },
+    { id: 'REC-06', session_id: 'SES-02', student_id: 'STD-001', status: 'H', score: 84, predicate: 'B', note: '' },
+    { id: 'REC-07', session_id: 'SES-02', student_id: 'STD-002', status: 'H', score: 92, predicate: 'A', note: '' },
+    { id: 'REC-08', session_id: 'SES-02', student_id: 'STD-003', status: 'H', score: 68, predicate: 'C', note: 'Perlu remedial' },
+    { id: 'REC-09', session_id: 'SES-02', student_id: 'STD-004', status: 'H', score: 90, predicate: 'A-', note: '' },
+    { id: 'REC-10', session_id: 'SES-02', student_id: 'STD-005', status: 'H', score: 76, predicate: 'B-', note: '' },
+    { id: 'REC-11', session_id: 'SES-03', student_id: 'STD-001', status: 'H', score: 86, predicate: 'B+', note: '' },
+    { id: 'REC-12', session_id: 'SES-03', student_id: 'STD-002', status: 'H', score: 91, predicate: 'A-', note: '' },
+    { id: 'REC-13', session_id: 'SES-03', student_id: 'STD-003', status: 'I', score: 72, predicate: 'C+', note: '' },
+    { id: 'REC-14', session_id: 'SES-03', student_id: 'STD-004', status: 'H', score: 88, predicate: 'B+', note: '' },
+    { id: 'REC-15', session_id: 'SES-03', student_id: 'STD-005', status: 'H', score: 79, predicate: 'B-', note: '' },
+    { id: 'REC-16', session_id: 'SES-04', student_id: 'STD-001', status: 'H', score: 85, predicate: 'B+', note: '' },
+    { id: 'REC-17', session_id: 'SES-04', student_id: 'STD-002', status: 'H', score: 95, predicate: 'A+', note: '' },
+    { id: 'REC-18', session_id: 'SES-04', student_id: 'STD-003', status: 'H', score: 80, predicate: 'B', note: '' },
+    { id: 'REC-19', session_id: 'SES-04', student_id: 'STD-004', status: 'H', score: 87, predicate: 'B+', note: '' },
+    { id: 'REC-20', session_id: 'SES-04', student_id: 'STD-005', status: 'H', score: 82, predicate: 'B', note: '' },
+    { id: 'REC-21', session_id: 'SES-05', student_id: 'STD-001', status: 'H', score: 82, predicate: 'B', note: '' },
+    { id: 'REC-22', session_id: 'SES-05', student_id: 'STD-002', status: 'H', score: 90, predicate: 'A-', note: '' },
+    { id: 'REC-23', session_id: 'SES-05', student_id: 'STD-003', status: 'H', score: 75, predicate: 'B-', note: '' },
+    { id: 'REC-24', session_id: 'SES-05', student_id: 'STD-004', status: 'H', score: 93, predicate: 'A', note: '' },
+    { id: 'REC-25', session_id: 'SES-05', student_id: 'STD-005', status: 'H', score: 78, predicate: 'B-', note: '' },
+  ];
+
+  db.JurnalMengajar = [
+    { id: 'JRN-01', teacher_id: 'USR-G01', class_id: 'CLS-7A', subject_id: 'SUB-IPA', session_id: 'SES-01', journal_date: '2026-08-10', meeting_no: 1, tp_text: 'Memahami hakikat ilmu sains, alat laboratorium, serta merancang percobaan ilmiah sederhana.', material: 'Pengukuran & Metode Ilmiah', activities: 'Diskusi Kelompok, Praktik/Demonstrasi', h_count: 4, s_count: 1, i_count: 0, a_count: 0, attendance_pct: 80, problems_solutions: 'Masalah: Beberapa siswa ragu membaca skala jangka sorong. Solusi: Pendampingan praktikum berkelompok.' },
+  ];
+
+  db.JadwalPelajaran = [
+    { id: 'JDW-01', teacher_id: 'USR-G01', class_id: 'CLS-7A', subject_id: 'SUB-IPA', day_name: 'Senin', start_time: '07:30', jp_count: 3, room_note: 'Lab IPA' },
+    { id: 'JDW-02', teacher_id: 'USR-G01', class_id: 'CLS-7B', subject_id: 'SUB-IPA', day_name: 'Rabu', start_time: '09:50', jp_count: 3, room_note: 'Ruang 7B' },
+    { id: 'JDW-03', teacher_id: 'USR-G02', class_id: 'CLS-7A', subject_id: 'SUB-BIN', day_name: 'Selasa', start_time: '07:30', jp_count: 3, room_note: 'Ruang 7A' },
+    { id: 'JDW-04', teacher_id: 'USR-G05', class_id: 'CLS-7A', subject_id: 'SUB-MTK', day_name: 'Kamis', start_time: '08:10', jp_count: 3, room_note: 'Ruang 7A' },
+  ];
+
+  db.JamPelajaran = createDefaultJamPelajaran(40);
+
+  db.AttitudeAspects = [
+    { id: 'ASP-01', name: 'Religius & Berakhlak', description: 'Berdoa sebelum/sesudah belajar dan menghormati sesama' },
+    { id: 'ASP-02', name: 'Disiplin & Tanggung Jawab', description: 'Tepat waktu hadir dan menyelesaikan tugas' },
+    { id: 'ASP-03', name: 'Gotong Royong', description: 'Aktif bekerja sama dalam kelompok' },
+    { id: 'ASP-04', name: 'Bernalar Kritis', description: 'Aktif bertanya dan menganalisis masalah' },
+  ];
+
+  db.AttitudeRatings = [
+    { id: 'ATR-01', class_id: 'CLS-7A', subject_id: 'SUB-IPA', teacher_id: 'USR-G01', student_id: 'STD-001', aspect_id: 'ASP-01', score: 5 },
+    { id: 'ATR-02', class_id: 'CLS-7A', subject_id: 'SUB-IPA', teacher_id: 'USR-G01', student_id: 'STD-001', aspect_id: 'ASP-02', score: 4 },
+    { id: 'ATR-03', class_id: 'CLS-7A', subject_id: 'SUB-IPA', teacher_id: 'USR-G01', student_id: 'STD-002', aspect_id: 'ASP-01', score: 5 },
+  ];
+
+  db.Ekstrakurikuler = [
+    { id: 'EKS-01', name: 'Praja Muda Karana (Pramuka)', coach_id: 'USR-G03', schedule: 'Jumat, 14:30 - 16:30 WITA', is_mandatory: 'true', description: 'Pendidikan kepramukaan wajib seluruh peserta didik SMP Kristen Waibakul' },
+    { id: 'EKS-02', name: 'Sepak Bola', coach_id: 'USR-G03', schedule: 'Selasa & Kamis, 15:30 WITA', is_mandatory: 'false', description: 'Pembinaan teknik dasar dan tim sepak bola sekolah' },
+    { id: 'EKS-03', name: 'Bola Voli', coach_id: 'USR-G05', schedule: 'Rabu, 15:30 WITA', is_mandatory: 'false', description: 'Latihan bola voli putra dan putri' },
+    { id: 'EKS-04', name: 'Musik & Paduan Suara', coach_id: 'USR-G06', schedule: 'Sabtu, 09:00 WITA', is_mandatory: 'false', description: 'Seni musik tradisional Sumba dan paduan suara gerejawi' },
+    { id: 'EKS-05', name: 'Drumband', coach_id: 'USR-G04', schedule: 'Sabtu, 10:30 WITA', is_mandatory: 'false', description: 'Gita Bahana SMPK Waibakul' },
+  ];
+
+  const allStudents = ['STD-001', 'STD-002', 'STD-003', 'STD-004', 'STD-005', 'STD-006', 'STD-007', 'STD-008', 'STD-009'];
+  const pramukaAssessments = allStudents.map((sid, idx) => ({
+    id: 'EKA-PRM-' + (idx + 1),
+    ekskul_id: 'EKS-01',
+    student_id: sid,
+    predicate: idx % 3 === 0 ? 'Sangat Baik' : 'Baik',
+    note: 'Aktif mengikuti latihan kepramukaan, baris-berbaris, dan kegiatan kemah bakti.',
+    semester: 'Ganjil',
+  }));
+  db.EkskulAssessments = [
+    ...pramukaAssessments,
+    { id: 'EKA-OPT-1', ekskul_id: 'EKS-02', student_id: 'STD-001', predicate: 'Sangat Baik', note: 'Menunjukkan kerja sama tim dan sportivitas tinggi dalam latihan sepak bola.', semester: 'Ganjil' },
+    { id: 'EKA-OPT-2', ekskul_id: 'EKS-04', student_id: 'STD-002', predicate: 'Sangat Baik', note: 'Memiliki vokal yang baik dan disiplin mengikuti latihan paduan suara.', semester: 'Ganjil' },
+  ];
+
+  db.KokurikulerProjects = [
+    {
+      id: 'PRJ-01',
+      title: 'Tenun Ikat & Kearifan Lokal Sumba Tengah',
+      theme: 'Kearifan Lokal',
+      description: 'Eksplorasi filosofi motif tenun ikat Sumba Tengah serta pelestarian budaya lokal bersama pengrajin Waibakul.',
+      dimensions: 'Berkebinekaan Global, Gotong Royong, Kreatif',
+      target_classes: 'CLS-7A,CLS-7B',
+      coordinator_id: 'USR-G01',
+      facilitator_ids: 'USR-G01,USR-G02,USR-G04',
+      schedule_block: 'Agustus - Oktober 2026 (Setiap Sabtu Pekan 2 & 4)',
+      academic_year: '2026/2027',
+      status: 'Berjalan',
+    },
+    {
+      id: 'PRJ-02',
+      title: 'Pengolahan Sampah Organik & Kebun Gizi Sekolah',
+      theme: 'Gaya Hidup Berkelanjutan',
+      description: 'Pembuatan kompos dan budidaya sayuran organik di pekarangan SMP Kristen Waibakul.',
+      dimensions: 'Beriman & Bertakwa, Gotong Royong, Bernalar Kritis',
+      target_classes: 'CLS-8A,CLS-9A',
+      coordinator_id: 'USR-G05',
+      facilitator_ids: 'USR-G05,USR-G06',
+      schedule_block: 'September - November 2026',
+      academic_year: '2026/2027',
+      status: 'Berjalan',
+    },
+  ];
+
+  db.KokurikulerEvaluations = [
+    {
+      id: 'P5E-01',
+      project_id: 'PRJ-01',
+      student_id: 'STD-001',
+      class_id: 'CLS-7A',
+      dimension_scores: JSON.stringify({ 'Berkebinekaan Global': 'BSH', 'Gotong Royong': 'SAB', Kreatif: 'BSH' }),
+      final_predicate: 'BSH',
+      note: 'Mampu bekerja sama sangat baik dalam kelompok wawancara pengrajin tenun dan mempresentasikan makna motif dengan percaya diri.',
+      reviewed_by: 'Debora Rambu Ngana, S.Pd.',
+    },
+    {
+      id: 'P5E-02',
+      project_id: 'PRJ-01',
+      student_id: 'STD-002',
+      class_id: 'CLS-7A',
+      dimension_scores: JSON.stringify({ 'Berkebinekaan Global': 'SAB', 'Gotong Royong': 'SAB', Kreatif: 'SAB' }),
+      final_predicate: 'SAB',
+      note: 'Sangat menonjol dalam kreativitas dokumentasi proyek dan menghargai keragaman budaya lokal Sumba.',
+      reviewed_by: 'Debora Rambu Ngana, S.Pd.',
+    },
+  ];
+
+  db.GuruWaliRecords = [
+    { id: 'GWR-01', guru_wali_id: 'USR-G01', student_id: 'STD-001', semester: 'Ganjil', disiplin: 5, kemandirian: 4, kejujuran: 5, relasi_sosial: 5, spiritual: 5, keaktifan: 4, hab_bangun_pagi: 5, hab_beribadah: 5, hab_berolahraga: 4, hab_makan_sehat: 4, hab_gemar_belajar: 5, hab_bermasyarakat: 5, hab_tidur_cepat: 4, note: 'Markus menunjukkan perkembangan karakter dan kepedulian sosial yang sangat positif di kelas.', recommendation: 'Pertahankan kedisiplinan dan tingkatkan keaktifan bertanya di kelas.' },
+    { id: 'GWR-02', guru_wali_id: 'USR-G01', student_id: 'STD-002', semester: 'Ganjil', disiplin: 5, kemandirian: 5, kejujuran: 5, relasi_sosial: 5, spiritual: 5, keaktifan: 5, hab_bangun_pagi: 5, hab_beribadah: 5, hab_berolahraga: 5, hab_makan_sehat: 4, hab_gemar_belajar: 5, hab_bermasyarakat: 5, hab_tidur_cepat: 5, note: 'Elsi menjadi teladan bagi teman-temannya dalam ibadah pagi dan ketekunan belajar.', recommendation: 'Dapat diikutsertakan dalam olimpiade sains tingkat kabupaten.' },
+  ];
+
+  db.AdditionalAssignments = [
+    { id: 'ADD-01', category: 'Kepanitiaan', title: 'Panitia Asesmen Sumatif Tengah Semester (ASTS) Ganjil', pj_id: 'USR-G01', member_ids: 'USR-G01,USR-G02,USR-G05', sk_number: '421.3/045/SMPK-WBK/IX/2026', location: 'SMP Kristen Waibakul', start_date: '2026-10-01', end_date: '2026-10-10', status: 'Aktif' },
+    { id: 'ADD-02', category: 'Pembimbingan Lomba', title: 'Pembimbingan OSN IPA & Matematika Tingkat Kab. Sumba Tengah', pj_id: 'USR-G05', member_ids: 'USR-G01,USR-G05', sk_number: '421.3/052/SMPK-WBK/IX/2026', location: 'Waibakul', start_date: '2026-09-15', end_date: '2026-11-20', status: 'Aktif' },
+  ];
+
+  db.PelanggaranSiswa = [
+    { id: 'PLG-01', student_id: 'STD-003', reporter_id: 'USR-G03', incident_date: '2026-09-12', category: 'Ringan', description: 'Terlambat mengikuti apel pagi 15 menit tanpa keterangan.', points: 5, sanction: 'Teguran lisan dan membersihkan taman depan kelas.', status: 'Selesai' },
+    { id: 'PLG-02', student_id: 'STD-007', reporter_id: 'USR-G02', incident_date: '2026-10-02', category: 'Sedang', description: 'Tidak mengenakan atribut seragam lengkap saat upacara bendera.', points: 15, sanction: 'Pembinaan oleh Wali Kelas & Waka Kesiswaan.', status: 'Dalam Pembinaan' },
+  ];
+
+  db.PrestasiSiswa = [
+    { id: 'PRS-01', student_id: 'STD-002', title: 'Juara 1 Lomba Pidato Bahasa Indonesia Tingkat SMP', level: 'Kabupaten', rank: 'Juara 1', event_date: '2026-08-17', organizer: 'Dinas Pendidikan Kab. Sumba Tengah' },
+  ];
+
+  db.OsisMembers = [
+    { id: 'OSI-01', student_id: 'STD-009', position: 'Ketua OSIS', division: 'Pengurus Inti', period: '2026/2027', status: 'Aktif' },
+    { id: 'OSI-02', student_id: 'STD-008', position: 'Sekretaris OSIS', division: 'Pengurus Inti', period: '2026/2027', status: 'Aktif' },
+  ];
+
+  db.PembiasaanKarakter = [
+    { id: 'PMB-01', activity_date: '2026-10-12', activity_name: 'Ibadah Pagi Bersama & Renungan Firman', category: 'Spiritual', coordinator_id: 'USR-G06', participation_pct: 98, note: 'Berjalan khidmat di aula sekolah.' },
+  ];
+
+  db.KaldikEvents = [
+    { id: 'KLD-01', start_date: '2026-07-13', end_date: '2026-07-15', title: 'MPLS Peserta Didik Baru T.A. 2026/2027', category: 'Kesiswaan', description: 'Masa Pengenalan Lingkungan Sekolah' },
+    { id: 'KLD-02', start_date: '2026-10-05', end_date: '2026-10-10', title: 'Sumatif Tengah Semester (STS) Ganjil', category: 'Akademik', description: 'Evaluasi tengah semester seluruh jenjang' },
+    { id: 'KLD-03', start_date: '2026-12-18', end_date: '2026-12-18', title: 'Pembagian Raport Semester Ganjil', category: 'Akademik', description: 'Penyerahan LHB kepada orang tua/wali' },
+  ];
+
+  db.SupervisiGuru = [
+    { id: 'SPV-01', teacher_id: 'USR-G02', supervisor_id: 'USR-KS', supervision_date: '2026-09-20', subject_id: 'SUB-BIN', has_modul: 'Ya', has_atp: 'Ya', has_asesmen: 'Ya', has_jurnal: 'Ya', score: 94, feedback: 'Perangkat ajar lengkap dan pembelajaran berdiferensiasi berjalan sangat baik.' },
+  ];
+
+  db.KemitraanKomite = [
+    { id: 'KMT-01', agenda_date: '2026-08-05', topic: 'Rapat Pleno Program Kerja Sekolah & Dukungan Literasi', participants: 'Pengurus Komite, Kepala Sekolah, Wali Murid', decision: 'Disepakati dukungan pengadaan pojok baca di setiap ruang kelas.', status: 'Terlaksana' },
+  ];
+
+  db.MouKerjasama = [
+    { id: 'MOU-01', partner_name: 'Puskesmas Waibakul', scope: 'Pemeriksaan Kesehatan Berkala, UKS & Imunisasi Remaja', start_date: '2026-07-01', end_date: '2027-06-30', pic_name: 'Ester Lende Bora, S.Pd.', status: 'Aktif' },
+  ];
+
+  db.PublikasiSekolah = [
+    { id: 'PUB-01', pub_date: '2026-08-18', title: 'SMP Kristen Waibakul Raih Juara 1 Pidato HUT RI ke-81', channel: 'Website & Media Sosial Sekolah', author_id: 'USR-G04', summary: 'Siswi kelas 7A Elsi Rambu Kahi mengharumkan nama sekolah di tingkat Kabupaten Sumba Tengah.' },
+  ];
+
+  db.BukuTamu = [
+    { id: 'BTM-01', visit_date: '2026-09-10', guest_name: 'Drs. Paulus Umbu Nggiku', institution: 'Pengawas Pembina Dinas PPO Sumba Tengah', purpose: 'Monitoring Kesiapan Implementasi Kurikulum & P5', met_with: 'Kepala Sekolah & Waka Kurikulum' },
+  ];
+
+  db.InventarisRuang = [
+    { id: 'RNG-01', room_code: 'R-7A', room_name: 'Ruang Kelas 7A', condition: 'Baik', capacity: 32, pic_name: 'Yohanes Umbu Deta, S.Pd.' },
+    { id: 'RNG-02', room_code: 'LAB-IPA', room_name: 'Laboratorium IPA', condition: 'Baik', capacity: 30, pic_name: 'Yohanes Umbu Deta, S.Pd.' },
+  ];
+
+  db.BarangSarpras = [
+    { id: 'BRG-01', item_code: 'KIB-B-001', item_name: 'Proyektor Epson EB-X500', room_id: 'LAB-IPA', quantity: 2, condition: 'Baik', source_fund: 'BOS Reguler 2026' },
+    { id: 'BRG-02', item_code: 'KIB-B-002', item_name: 'Mikroskop Binokuler Siswa', room_id: 'LAB-IPA', quantity: 8, condition: 'Baik', source_fund: 'DAK Pendidikan' },
+  ];
+
+  db.TiketPerbaikan = [
+    { id: 'TKT-01', report_date: '2026-10-08', reporter_id: 'USR-G02', item_name: 'Kunci Pintu Ruang Kelas 7B', location: 'Ruang 7B', issue_desc: 'Silinder kunci macet saat dibuka pagi hari.', priority: 'Tinggi', status: 'Diproses' },
+  ];
+
+  db.PeminjamanSarpras = [
+    { id: 'PJM-01', borrow_date: '2026-10-14', return_date: '2026-10-14', borrower_name: 'Debora Rambu Ngana, S.Pd.', item_name: 'Sound System Portable & Mic Wireless', quantity: 1, purpose: 'Gelar Karya P5 Tenun Ikat', status: 'Dipinjam' },
+  ];
+
+  db.Announcements = [
+    { id: 'ANN-01', created_at: '2026-10-15 08:00', author_id: 'USR-G01', author_name: 'Yohanes Umbu Deta, S.Pd. (Waka Kurikulum)', category: 'Akademik', priority: 'Penting', is_pinned: 'true', title: 'Batas Akhir Penginputan Nilai STS & Jurnal Mengajar', content: 'Diberitahukan kepada seluruh Bapak/Ibu Guru Mata Pelajaran SMP Kristen Waibakul agar segera melengkapi nilai Sumatif Tengah Semester (STS) dan menyinkronkan Jurnal Mengajar paling lambat hari Jumat pukul 14.00 WITA.' },
+    { id: 'ANN-02', created_at: '2026-10-12 09:30', author_id: 'USR-KS', author_name: 'Pdt. Kornelis Umbu Tay, S.Th., M.Pd.', category: 'Kedinasan', priority: 'Biasa', is_pinned: 'false', title: 'Ibadah Syukur Bulanan & Rapat Koordinasi GTK', content: 'Mengundang seluruh pendidik dan tenaga kependidikan untuk hadir dalam Ibadah Syukur Bulanan di Aula SMP Kristen Waibakul pada hari Sabtu pukul 08.00 WITA.' },
+  ];
+
+  db.ActivityLogs = [
+    { id: 'LOG-01', timestamp: formatMakassarTimestamp(), user_id: 'USR-ADM', user_name: 'Melkianus Lede, S.Kom.', role: 'admin', action: 'INIT_DB', detail: 'Inisialisasi database awal SMP Kristen Waibakul T.A. 2026/2027' },
+  ];
+
+  return db;
+}

@@ -1,0 +1,1689 @@
+/**
+ * ============================================================================
+ * SISTEM INFORMASI AKADEMIK & MANAJEMEN SEKOLAH (SIAKAD)
+ * SMP KRISTEN WAIBAKUL - KABUPATEN SUMBA TENGAH, NTT
+ * TAHUN AJARAN 2026/2027
+ * File: Code.gs (Backend Google Apps Script & Database Engine)
+ * ============================================================================
+ */
+
+const APP_CONFIG = {
+  SCHOOL_NAME: 'SMP KRISTEN WAIBAKUL',
+  SCHOOL_ADDRESS: 'Jl. Trans Sumba, Waibakul, Kec. Katiku Tana, Kab. Sumba Tengah, NTT',
+  SCHOOL_NPSN: '50304109',
+  HEADMASTER_NAME: 'Pdt. Kornelis Umbu Tay, S.Th., M.Pd.',
+  HEADMASTER_NIP: '19750412 200501 1 009',
+  DEFAULT_YEAR: '2026/2027',
+  DEFAULT_SEMESTER: 'Ganjil'
+};
+
+
+/**
+ * Daftar kunci Pengaturan Identitas Sekolah (sheet "Settings": key | value | description).
+ * Kunci yang belum ada otomatis ditambahkan (ensureSchoolSettings_) tanpa menimpa nilai lama.
+ */
+const SCHOOL_SETTING_DEFS = [
+  { key: 'school_name',          description: 'Nama Satuan Pendidikan',            def: APP_CONFIG.SCHOOL_NAME },
+  { key: 'school_npsn',          description: 'NPSN',                              def: '50304088' },
+  { key: 'school_nss',           description: 'NSS (Nomor Statistik Sekolah)',     def: '' },
+  { key: 'school_status',        description: 'Status Sekolah (Negeri/Swasta)',    def: 'Swasta' },
+  { key: 'school_accreditation', description: 'Akreditasi Sekolah',                def: '' },
+  { key: 'school_foundation',    description: 'Nama Yayasan / Penyelenggara',      def: 'YAYASAN PENDIDIKAN MASEHI SUMBA (YAPKRIS)' },
+  { key: 'school_address',       description: 'Alamat Sekolah',                    def: APP_CONFIG.SCHOOL_ADDRESS },
+  { key: 'school_regency',       description: 'Kabupaten / Kota',                  def: 'Kabupaten Sumba Tengah' },
+  { key: 'school_province',      description: 'Provinsi',                          def: 'Nusa Tenggara Timur' },
+  { key: 'school_postal_code',   description: 'Kode Pos',                          def: '' },
+  { key: 'school_phone',         description: 'Telepon Sekolah',                   def: '' },
+  { key: 'school_email',         description: 'Email Sekolah',                     def: '' },
+  { key: 'school_website',       description: 'Website Sekolah',                   def: '' },
+  { key: 'headmaster_name',      description: 'Nama Kepala Sekolah',               def: 'Pdt. Kornelis Umbu Tay, S.Th., M.Pd.' },
+  { key: 'headmaster_nip',       description: 'NIP Kepala Sekolah',                def: '19750412 200501 1 009' },
+  { key: 'academic_year',        description: 'Tahun Ajaran Aktif',                def: APP_CONFIG.DEFAULT_YEAR },
+  { key: 'active_semester',      description: 'Semester Aktif',                    def: APP_CONFIG.DEFAULT_SEMESTER },
+  { key: 'curriculum_name',      description: 'Nama Kurikulum',                    def: 'Kurikulum Nasional' },
+  { key: 'jp_duration_minutes',  description: 'Durasi 1 Jam Pelajaran (Menit)',    def: '40' },
+  { key: 'report_place',         description: 'Tempat Penandatanganan Dokumen',    def: 'Waibakul' },
+  { key: 'school_logo_left',  description: 'Logo Kop Surat (Kiri) - data gambar', def: '' },
+  { key: 'school_logo_right', description: 'Logo Kop Surat (Kanan) - data gambar', def: '' },
+  { key: 'report_date',          description: 'Tanggal Pembagian Raport',          def: '2026-12-18' }
+];
+
+/** Ambil satu nilai Settings (fallback jika kosong / belum ada). */
+function getSetting_(key, fallback) {
+  const f = readSheetData('Settings').find(r => String(r.key) === key);
+  return (f && String(f.value) !== '') ? String(f.value) : fallback;
+}
+
+/** Tambahkan kunci identitas yang belum ada ke sheet Settings (tidak menimpa data lama). */
+function ensureSchoolSettings_() {
+  const sheet = getSpreadsheet_().getSheetByName('Settings');
+  if (!sheet) return;
+  const missingIn = rows => SCHOOL_SETTING_DEFS.filter(d => !rows.some(r => String(r.key) === d.key));
+  if (!missingIn(readSheetData('Settings')).length) return;
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const miss = missingIn(readSheetData('Settings'));
+    if (!miss.length) return;
+    sheet.getRange('B:B').setNumberFormat('@');   // teks murni: NPSN, telepon, NIP tidak berubah format
+    const rows = miss.map(d => [d.key, d.def, d.description]);
+    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 3).setValues(rows);
+  } finally { lock.releaseLock(); }
+}
+
+/**
+ * Daftar 37 Sheet Database beserta Header Kolomnya
+ */
+const SCHEMA_DEF = {
+  Users: ['id', 'username', 'password', 'full_name', 'nip', 'role', 'avatar_initials', 'phone', 'status'],
+  Classes: ['id', 'name', 'grade_level', 'wali_kelas_id', 'kkm', 'academic_year'],
+  Subjects: ['id', 'code', 'name', 'phase', 'jp_per_week'],
+  Students: ['id', 'nis', 'nisn', 'full_name', 'gender', 'class_id', 'parent_name', 'parent_phone', 'guru_wali_id', 'literacy_level', 'numeracy_level', 'dream_job', 'status'],
+  TeacherClasses: ['id', 'teacher_id', 'class_id', 'subject_id', 'academic_year', 'semester'],
+  TeacherJabatans: ['id', 'teacher_id', 'jabatan_name', 'role_key', 'target_id', 'sk_number', 'tmt_date', 'jp_eq', 'status'],
+  CpAtp_Prota: ['id', 'subject_id', 'grade_level', 'phase', 'element', 'atp_code', 'tp_text', 'scope_material', 'semester', 'jp_allocation', 'meeting_count', 'week_number'],
+  AttendanceSessions: ['id', 'teacher_class_id', 'class_id', 'subject_id', 'teacher_id', 'session_type', 'atp_id', 'atp_code', 'title', 'session_date', 'kbm_activities', 'kbm_problems', 'kbm_solutions'],
+  AttendanceRecords: ['id', 'session_id', 'student_id', 'status', 'score', 'predicate', 'note'],
+  JurnalMengajar: ['id', 'teacher_id', 'class_id', 'subject_id', 'session_id', 'journal_date', 'meeting_no', 'tp_text', 'material', 'activities', 'h_count', 's_count', 'i_count', 'a_count', 'attendance_pct', 'problems_solutions'],
+  JadwalPelajaran: ['id', 'teacher_id', 'class_id', 'subject_id', 'day_name', 'start_time', 'jp_count', 'room_note'],
+  AttitudeAspects: ['id', 'name', 'description'],
+  JamPelajaran: ['id', 'slot_no', 'start_time', 'end_time', 'label'],
+  JadwalKelas: ['id', 'day_name', 'slot_no', 'class_id', 'subject_id', 'teacher_id'],
+  AbsensiHarian: ['id', 'absen_date', 'class_id', 'student_id', 'status', 'note', 'recorded_by'],
+  StatusNilai: ['id', 'teacher_class_id', 'class_id', 'subject_id', 'status', 'approved_by', 'approved_at'],
+  AttitudeRatings: ['id', 'class_id', 'subject_id', 'teacher_id', 'student_id', 'aspect_id', 'score'],
+  Ekstrakurikuler: ['id', 'name', 'coach_id', 'schedule', 'is_mandatory', 'description'],
+  EkskulAssessments: ['id', 'ekskul_id', 'student_id', 'predicate', 'note', 'semester'],
+  KokurikulerProjects: ['id', 'title', 'theme', 'description', 'dimensions', 'target_classes', 'coordinator_id', 'facilitator_ids', 'schedule_block', 'academic_year', 'status'],
+  KokurikulerEvaluations: ['id', 'project_id', 'student_id', 'class_id', 'dimension_scores', 'final_predicate', 'note', 'reviewed_by'],
+  GuruWaliRecords: ['id', 'guru_wali_id', 'student_id', 'semester', 'disiplin', 'kemandirian', 'kejujuran', 'relasi_sosial', 'spiritual', 'keaktifan', 'note', 'recommendation'],
+  AdditionalAssignments: ['id', 'category', 'title', 'pj_id', 'member_ids', 'sk_number', 'location', 'start_date', 'end_date', 'status'],
+  PelanggaranSiswa: ['id', 'student_id', 'reporter_id', 'incident_date', 'category', 'description', 'points', 'sanction', 'status'],
+  PrestasiSiswa: ['id', 'student_id', 'title', 'level', 'rank', 'event_date', 'organizer'],
+  OsisMembers: ['id', 'student_id', 'position', 'division', 'period', 'status'],
+  PembiasaanKarakter: ['id', 'activity_date', 'activity_name', 'category', 'coordinator_id', 'participation_pct', 'note'],
+  KaldikEvents: ['id', 'start_date', 'end_date', 'title', 'category', 'description'],
+  SupervisiGuru: ['id', 'teacher_id', 'supervisor_id', 'supervision_date', 'subject_id', 'has_modul', 'has_atp', 'has_asesmen', 'has_jurnal', 'score', 'feedback'],
+  KemitraanKomite: ['id', 'agenda_date', 'topic', 'participants', 'decision', 'status'],
+  MouKerjasama: ['id', 'partner_name', 'scope', 'start_date', 'end_date', 'pic_name', 'status'],
+  PublikasiSekolah: ['id', 'pub_date', 'title', 'channel', 'author_id', 'summary'],
+  BukuTamu: ['id', 'visit_date', 'guest_name', 'institution', 'purpose', 'met_with'],
+  InventarisRuang: ['id', 'room_code', 'room_name', 'condition', 'capacity', 'pic_name'],
+  BarangSarpras: ['id', 'item_code', 'item_name', 'room_id', 'quantity', 'condition', 'source_fund'],
+  TiketPerbaikan: ['id', 'report_date', 'reporter_id', 'item_name', 'location', 'issue_desc', 'priority', 'status'],
+  PeminjamanSarpras: ['id', 'borrow_date', 'return_date', 'borrower_name', 'item_name', 'quantity', 'purpose', 'status'],
+  Announcements: ['id', 'created_at', 'author_id', 'author_name', 'category', 'priority', 'is_pinned', 'title', 'content'],
+  ActivityLogs: ['id', 'timestamp', 'user_id', 'user_name', 'role', 'action', 'detail'],
+  KehadiranGTK: ['id', 'tanggal', 'nama', 'jabatan', 'jam_masuk', 'jam_pulang', 'status', 'keterangan', 'user_id', 'sumber'],
+  RolePermissions: ['role', 'allowed_menus', 'can_edit'],
+  Settings: ['key', 'value', 'description']
+};
+
+/** Kolom yang wajib disimpan sebagai TEKS (mencegah Sheets mengubah "07:45" jadi tanggal 1899-12-30, dsb). */
+const TEXT_FORMAT_COLS = {
+  JadwalPelajaran: ['start_time'],
+  JamPelajaran: ['start_time', 'end_time'],
+  AbsensiHarian: ['absen_date'],
+  Students: ['nis', 'nisn', 'parent_phone', 'class_id']
+};
+/**
+ * Mengambil Spreadsheet aktif (container-bound) atau otomatis membuat/membuka
+ * Spreadsheet database jika skrip dijalankan secara standalone.
+ */
+function getSpreadsheet_() {
+  let ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (ss) return ss;
+  const props = PropertiesService.getScriptProperties();
+  const savedId = props.getProperty('SPREADSHEET_ID');
+  if (savedId) {
+    try { return SpreadsheetApp.openById(savedId); } catch (e) {}
+  }
+  ss = SpreadsheetApp.create('Database SIAKAD SMP Kristen Waibakul');
+  props.setProperty('SPREADSHEET_ID', ss.getId());
+  return ss;
+}
+
+function applyTextCols_(sheet, sheetName) {
+  const cols = TEXT_FORMAT_COLS[sheetName];
+  if (!cols) return;
+  const H = SCHEMA_DEF[sheetName];
+  cols.forEach(c => {
+    const i = H.indexOf(c);
+    if (i >= 0) sheet.getRange(1, i + 1, sheet.getMaxRows(), 1).setNumberFormat('@');
+  });
+}
+
+/**
+ * Entry point Web App
+ */
+function doGet(e) {
+  return HtmlService.createHtmlOutputFromFile('Index')
+    .setTitle('SIAKAD & Manajemen Sekolah — SMP Kristen Waibakul')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+/**
+ * Helper include jika menggunakan partial HTML
+ */
+function include(filename) {
+  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+}
+
+/**
+ * Memastikan database sudah diinisialisasi
+ */
+function ensureDatabaseInitialized() {
+  const ss = getSpreadsheet_();
+  if (Object.keys(SCHEMA_DEF).some(n => !ss.getSheetByName(n))) {
+    initDatabase();   // membuat sheet yang belum ada (mis. KehadiranGTK) tanpa menimpa data lama
+  }
+  // Langkah tambahan: kegagalan salah satunya tidak boleh menghentikan aplikasi
+  [prepareKehadiranSheet_, ensureSchoolSettings_, ensureJamPelajaran_].forEach(fn => {
+    try { fn(); } catch (err) { console.error(fn.name + ': ' + err); }
+  });
+}
+
+/**
+ * Inisialisasi seluruh 37 Sheet dan Data Awal Realistis SMP Kristen Waibakul
+ */
+function initDatabase() {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const ss = getSpreadsheet_();
+    const sheetNames = Object.keys(SCHEMA_DEF);
+
+    sheetNames.forEach(name => {
+      let sheet = ss.getSheetByName(name);
+      if (!sheet) {
+        sheet = ss.insertSheet(name);
+      }
+      if (sheet.getLastRow() === 0) {
+        const headers = SCHEMA_DEF[name];
+        sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+        sheet.getRange(1, 1, 1, headers.length)
+          .setBackground('#1e293b')
+          .setFontColor('#ffffff')
+          .setFontWeight('bold');
+        sheet.setFrozenRows(1);
+      }
+      applyTextCols_(sheet, name);
+    });
+
+    // Hapus Sheet1 default jika masih kosong dan ada
+    const defaultSheet = ss.getSheetByName('Sheet1');
+    if (defaultSheet && ss.getSheets().length > 1 && defaultSheet.getLastRow() <= 1) {
+      ss.deleteSheet(defaultSheet);
+    }
+
+    // Cek apakah Users sudah terisi; jika kosong, lakukan seeding data awal
+    const usersSheet = ss.getSheetByName('Users');
+    if (usersSheet.getLastRow() <= 1) {
+      seedInitialData(ss);
+    }
+    return { success: true, message: 'Database SMP Kristen Waibakul (42 Sheets) berhasil diinisialisasi!' };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Mengisi data awal realistis SMP Kristen Waibakul (T.A. 2026/2027)
+ */
+function seedInitialData(ss) {
+  const writeRows = (sheetName, rows) => {
+    if (!rows || rows.length === 0) return;
+    const sheet = ss.getSheetByName(sheetName);
+    const headers = SCHEMA_DEF[sheetName];
+    const values = rows.map(obj => headers.map(h => (obj[h] !== undefined && obj[h] !== null) ? obj[h] : ''));
+    sheet.getRange(sheet.getLastRow() + 1, 1, values.length, headers.length).setValues(values);
+  };
+
+  // 1. Settings
+  writeRows('Settings', [
+    { key: 'jp_duration_minutes', value: '40', description: 'Durasi 1 Jam Pelajaran (Menit)' },
+    { key: 'academic_year', value: '2026/2027', description: 'Tahun Ajaran Aktif' },
+    { key: 'active_semester', value: 'Ganjil', description: 'Semester Aktif' },
+    { key: 'school_name', value: 'SMP KRISTEN WAIBAKUL', description: 'Nama Satuan Pendidikan' },
+    { key: 'school_address', value: 'Jl. Trans Sumba, Waibakul, Kec. Katiku Tana, Kab. Sumba Tengah, NTT', description: 'Alamat Sekolah' },
+    { key: 'headmaster_name', value: 'Pdt. Kornelis Umbu Tay, S.Th., M.Pd.', description: 'Nama Kepala Sekolah' },
+    { key: 'headmaster_nip', value: '19750412 200501 1 009', description: 'NIP Kepala Sekolah' }
+  ]);
+
+  // 2. Users (Admin, Kepsek, Guru Multi-Jabatan, Admin Kokurikuler, Wali Murid)
+  writeRows('Users', [
+    { id: 'USR-ADM', username: 'admin', password: '123456', full_name: 'Melkianus Lede, S.Kom.', nip: '19900514 201903 1 004', role: 'admin', avatar_initials: 'ML', phone: '081239001101', status: 'Aktif' },
+    { id: 'USR-KS', username: 'kepsek', password: '123456', full_name: 'Pdt. Kornelis Umbu Tay, S.Th., M.Pd.', nip: '19750412 200501 1 009', role: 'kepala_sekolah', avatar_initials: 'KU', phone: '081239001102', status: 'Aktif' },
+    { id: 'USR-G01', username: 'yohanes.um', password: '123456', full_name: 'Yohanes Umbu Deta, S.Pd.', nip: '19840718 201001 1 012', role: 'guru', avatar_initials: 'YU', phone: '081239001103', status: 'Aktif' },
+    { id: 'USR-G02', username: 'maria.rambu', password: '123456', full_name: 'Maria Rambu Bangi, S.Pd., Gr.', nip: '19881103 201402 2 005', role: 'guru', avatar_initials: 'MR', phone: '081239001104', status: 'Aktif' },
+    { id: 'USR-G03', username: 'petrus.kadi', password: '123456', full_name: 'Petrus Kadi Wanandi, S.Pd.', nip: '19860221 201101 1 008', role: 'guru', avatar_initials: 'PK', phone: '081239001105', status: 'Aktif' },
+    { id: 'USR-G04', username: 'ester.lende', password: '123456', full_name: 'Ester Lende Bora, S.Pd.', nip: '19910915 201803 2 007', role: 'guru', avatar_initials: 'EL', phone: '081239001106', status: 'Aktif' },
+    { id: 'USR-G05', username: 'damianus.ng', password: '123456', full_name: 'Damianus Ngongo Bili, S.Si.', nip: '19890310 201502 1 003', role: 'guru', avatar_initials: 'DN', phone: '081239001107', status: 'Aktif' },
+    { id: 'USR-G06', username: 'naomi.tamu', password: '123456', full_name: 'Naomi Tamu Ina, S.Th.', nip: '19870625 201212 2 002', role: 'guru', avatar_initials: 'NT', phone: '081239001108', status: 'Aktif' },
+    { id: 'USR-P5', username: 'admin.p5', password: '123456', full_name: 'Debora Rambu Ngana, S.Pd.', nip: '19920119 202012 2 011', role: 'admin_kokurikuler', avatar_initials: 'DR', phone: '081239001109', status: 'Aktif' },
+    { id: 'USR-WM01', username: 'ortu.001', password: '123456', full_name: 'Bpk. Lukas Umbu (Wali dari Markus Umbu)', nip: 'STD-001', role: 'wali_murid', avatar_initials: 'LU', phone: '085239112201', status: 'Aktif' }
+  ]);
+
+  // 3. Classes (7A, 7B, 8A, 9A dengan KKM 75)
+  writeRows('Classes', [
+    { id: 'CLS-7A', name: '7A', grade_level: '7', wali_kelas_id: 'USR-G01', kkm: 75, academic_year: '2026/2027' },
+    { id: 'CLS-7B', name: '7B', grade_level: '7', wali_kelas_id: 'USR-G02', kkm: 75, academic_year: '2026/2027' },
+    { id: 'CLS-8A', name: '8A', grade_level: '8', wali_kelas_id: 'USR-G05', kkm: 75, academic_year: '2026/2027' },
+    { id: 'CLS-9A', name: '9A', grade_level: '9', wali_kelas_id: 'USR-G06', kkm: 75, academic_year: '2026/2027' }
+  ]);
+
+  // 4. Subjects
+  writeRows('Subjects', [
+    { id: 'SUB-PAK', code: 'PAK', name: 'Pendidikan Agama Kristen & Budi Pekerti', phase: 'D', jp_per_week: 3 },
+    { id: 'SUB-BIN', code: 'BIN', name: 'Bahasa Indonesia', phase: 'D', jp_per_week: 6 },
+    { id: 'SUB-MTK', code: 'MTK', name: 'Matematika', phase: 'D', jp_per_week: 5 },
+    { id: 'SUB-IPA', code: 'IPA', name: 'Ilmu Pengetahuan Alam (IPA)', phase: 'D', jp_per_week: 5 },
+    { id: 'SUB-IPS', code: 'IPS', name: 'Ilmu Pengetahuan Sosial (IPS)', phase: 'D', jp_per_week: 4 },
+    { id: 'SUB-BIG', code: 'BIG', name: 'Bahasa Inggris', phase: 'D', jp_per_week: 4 },
+    { id: 'SUB-PJK', code: 'PJOK', name: 'Pendidikan Jasmani, Olahraga & Kesehatan', phase: 'D', jp_per_week: 3 },
+    { id: 'SUB-PPK', code: 'PPKn', name: 'Pendidikan Pancasila', phase: 'D', jp_per_week: 3 }
+  ]);
+
+  // 5. TeacherJabatans (Multi-Jabatan Guru)
+  writeRows('TeacherJabatans', [
+    { id: 'JAB-01', teacher_id: 'USR-G01', jabatan_name: 'Wakil Kepala Sekolah Bidang Kurikulum', role_key: 'waka_kurikulum', target_id: '', sk_number: '421.3/014/SMPK-WBK/VII/2026', tmt_date: '2026-07-13', jp_eq: 12, status: 'Aktif' },
+    { id: 'JAB-02', teacher_id: 'USR-G01', jabatan_name: 'Wali Kelas 7A', role_key: 'wali_kelas', target_id: 'CLS-7A', sk_number: '421.3/015/SMPK-WBK/VII/2026', tmt_date: '2026-07-13', jp_eq: 2, status: 'Aktif' },
+    { id: 'JAB-03', teacher_id: 'USR-G01', jabatan_name: 'Koordinator Proyek P5 Kelas 7', role_key: 'admin_kokurikuler', target_id: 'PRJ-01', sk_number: '421.3/019/SMPK-WBK/VII/2026', tmt_date: '2026-07-13', jp_eq: 2, status: 'Aktif' },
+    { id: 'JAB-04', teacher_id: 'USR-G02', jabatan_name: 'Wakil Kepala Sekolah Bidang Kesiswaan', role_key: 'waka_kesiswaan', target_id: '', sk_number: '421.3/014/SMPK-WBK/VII/2026', tmt_date: '2026-07-13', jp_eq: 12, status: 'Aktif' },
+    { id: 'JAB-05', teacher_id: 'USR-G02', jabatan_name: 'Wali Kelas 7B', role_key: 'wali_kelas', target_id: 'CLS-7B', sk_number: '421.3/015/SMPK-WBK/VII/2026', tmt_date: '2026-07-13', jp_eq: 2, status: 'Aktif' },
+    { id: 'JAB-06', teacher_id: 'USR-G03', jabatan_name: 'Wakil Kepala Sekolah Bidang Sarpras', role_key: 'waka_sarpras', target_id: '', sk_number: '421.3/014/SMPK-WBK/VII/2026', tmt_date: '2026-07-13', jp_eq: 12, status: 'Aktif' },
+    { id: 'JAB-07', teacher_id: 'USR-G04', jabatan_name: 'Wakil Kepala Sekolah Bidang Humas', role_key: 'waka_humas', target_id: '', sk_number: '421.3/014/SMPK-WBK/VII/2026', tmt_date: '2026-07-13', jp_eq: 12, status: 'Aktif' },
+    { id: 'JAB-08', teacher_id: 'USR-G05', jabatan_name: 'Wali Kelas 8A', role_key: 'wali_kelas', target_id: 'CLS-8A', sk_number: '421.3/015/SMPK-WBK/VII/2026', tmt_date: '2026-07-13', jp_eq: 2, status: 'Aktif' },
+    { id: 'JAB-09', teacher_id: 'USR-G06', jabatan_name: 'Wali Kelas 9A', role_key: 'wali_kelas', target_id: 'CLS-9A', sk_number: '421.3/015/SMPK-WBK/VII/2026', tmt_date: '2026-07-13', jp_eq: 2, status: 'Aktif' }
+  ]);
+
+  // 6. TeacherClasses (Penugasan Mengajar)
+  writeRows('TeacherClasses', [
+    { id: 'TC-01', teacher_id: 'USR-G01', class_id: 'CLS-7A', subject_id: 'SUB-IPA', academic_year: '2026/2027', semester: 'Ganjil' },
+    { id: 'TC-02', teacher_id: 'USR-G01', class_id: 'CLS-7B', subject_id: 'SUB-IPA', academic_year: '2026/2027', semester: 'Ganjil' },
+    { id: 'TC-03', teacher_id: 'USR-G02', class_id: 'CLS-7A', subject_id: 'SUB-BIN', academic_year: '2026/2027', semester: 'Ganjil' },
+    { id: 'TC-04', teacher_id: 'USR-G02', class_id: 'CLS-7B', subject_id: 'SUB-BIN', academic_year: '2026/2027', semester: 'Ganjil' },
+    { id: 'TC-05', teacher_id: 'USR-G05', class_id: 'CLS-7A', subject_id: 'SUB-MTK', academic_year: '2026/2027', semester: 'Ganjil' },
+    { id: 'TC-06', teacher_id: 'USR-G05', class_id: 'CLS-8A', subject_id: 'SUB-MTK', academic_year: '2026/2027', semester: 'Ganjil' },
+    { id: 'TC-07', teacher_id: 'USR-G04', class_id: 'CLS-7A', subject_id: 'SUB-IPS', academic_year: '2026/2027', semester: 'Ganjil' },
+    { id: 'TC-08', teacher_id: 'USR-G03', class_id: 'CLS-7A', subject_id: 'SUB-PJK', academic_year: '2026/2027', semester: 'Ganjil' },
+    { id: 'TC-09', teacher_id: 'USR-G06', class_id: 'CLS-7A', subject_id: 'SUB-PAK', academic_year: '2026/2027', semester: 'Ganjil' },
+    { id: 'TC-10', teacher_id: 'USR-G06', class_id: 'CLS-9A', subject_id: 'SUB-PAK', academic_year: '2026/2027', semester: 'Ganjil' }
+  ]);
+
+  // 7. Students
+  writeRows('Students', [
+    { id: 'STD-001', nis: '2627001', nisn: '0134589001', full_name: 'Markus Umbu Pati', gender: 'L', class_id: 'CLS-7A', parent_name: 'Lukas Umbu', parent_phone: '085239112201', guru_wali_id: 'USR-G01', literacy_level: 'Cakap', numeracy_level: 'Cakap', dream_job: 'Dokter', status: 'Aktif' },
+    { id: 'STD-002', nis: '2627002', nisn: '0134589002', full_name: 'elsi Rambu Kahi', gender: 'P', class_id: 'CLS-7A', parent_name: 'Daniel Kahi', parent_phone: '085239112202', guru_wali_id: 'USR-G01', literacy_level: 'Sangat Cakap', numeracy_level: 'Cakap', dream_job: 'Guru', status: 'Aktif' },
+    { id: 'STD-003', nis: '2627003', nisn: '0134589003', full_name: 'Yulius Ndapa Doda', gender: 'L', class_id: 'CLS-7A', parent_name: 'Marthen Ndapa', parent_phone: '085239112203', guru_wali_id: 'USR-G02', literacy_level: 'Berkembang', numeracy_level: 'Berkembang', dream_job: 'Tentara / TNI', status: 'Aktif' },
+    { id: 'STD-004', nis: '2627004', nisn: '0134589004', full_name: 'Martha Rambu Podu', gender: 'P', class_id: 'CLS-7A', parent_name: 'Stepanus Podu', parent_phone: '085239112204', guru_wali_id: 'USR-G04', literacy_level: 'Cakap', numeracy_level: 'Sangat Cakap', dream_job: 'Insinyur Sipil', status: 'Aktif' },
+    { id: 'STD-005', nis: '2627005', nisn: '0134589005', full_name: 'Kristian Bili Lende', gender: 'L', class_id: 'CLS-7A', parent_name: 'Andreas Bili', parent_phone: '085239112205', guru_wali_id: 'USR-G01', literacy_level: 'Cakap', numeracy_level: 'Berkembang', dream_job: 'Pendeta', status: 'Aktif' },
+    { id: 'STD-006', nis: '2627006', nisn: '0134589006', full_name: 'Febriana Tamu Apu', gender: 'P', class_id: 'CLS-7B', parent_name: 'Simon Apu', parent_phone: '085239112206', guru_wali_id: 'USR-G02', literacy_level: 'Cakap', numeracy_level: 'Cakap', dream_job: 'Perawat', status: 'Aktif' },
+    { id: 'STD-007', nis: '2627007', nisn: '0134589007', full_name: 'Oktavianus Umbu Zogara', gender: 'L', class_id: 'CLS-7B', parent_name: 'Ruben Zogara', parent_phone: '085239112207', guru_wali_id: 'USR-G03', literacy_level: 'Berkembang', numeracy_level: 'Cakap', dream_job: 'Atlet Sepak Bola', status: 'Aktif' },
+    { id: 'STD-008', nis: '2526011', nisn: '0124589011', full_name: 'Agustina Rambu Lika', gender: 'P', class_id: 'CLS-8A', parent_name: 'Paulus Lika', parent_phone: '085239112208', guru_wali_id: 'USR-G05', literacy_level: 'Sangat Cakap', numeracy_level: 'Cakap', dream_job: 'Akuntan', status: 'Aktif' },
+    { id: 'STD-009', nis: '2425021', nisn: '0114589021', full_name: 'Samuel Kadi Daku', gender: 'L', class_id: 'CLS-9A', parent_name: 'Nikodemus Daku', parent_phone: '085239112209', guru_wali_id: 'USR-G06', literacy_level: 'Cakap', numeracy_level: 'Cakap', dream_job: 'Programmer', status: 'Aktif' }
+  ]);
+  // Perbaiki kapitalisasi nama Elsi
+  ss.getSheetByName('Students').getRange(3, 4).setValue('Elsi Rambu Kahi');
+
+  // 8. CpAtp_Prota
+  writeRows('CpAtp_Prota', [
+    { id: 'ATP-01', subject_id: 'SUB-IPA', grade_level: '7', phase: 'D', element: 'Pemahaman IPA', atp_code: 'IPA.7.1', tp_text: 'Memahami hakikat ilmu sains, alat laboratorium, serta merancang percobaan ilmiah sederhana.', scope_material: 'Hakikat Ilmu Sains & Metode Ilmiah', semester: 'Ganjil', jp_allocation: 10, meeting_count: 3, week_number: '1-3' },
+    { id: 'ATP-02', subject_id: 'SUB-IPA', grade_level: '7', phase: 'D', element: 'Pemahaman IPA', atp_code: 'IPA.7.2', tp_text: 'Menganalisis perubahan wujud zat, massa jenis, serta pemisahan campuran dalam kehidupan sehari-hari.', scope_material: 'Zat dan Perubahannya', semester: 'Ganjil', jp_allocation: 15, meeting_count: 4, week_number: '4-7' },
+    { id: 'ATP-03', subject_id: 'SUB-IPA', grade_level: '7', phase: 'D', element: 'Keterampilan Proses', atp_code: 'IPA.7.3', tp_text: 'Mengukur suhu benda dan menghitung kalor serta perpindahannya pada peristiwa sehari-hari.', scope_material: 'Suhu, Kalor dan Pemuaian', semester: 'Ganjil', jp_allocation: 15, meeting_count: 4, week_number: '8-11' },
+    { id: 'ATP-04', subject_id: 'SUB-BIN', grade_level: '7', phase: 'D', element: 'Menyimak & Membaca', atp_code: 'BIN.7.1', tp_text: 'Mengidentifikasi struktur dan kaidah kebahasaan teks deskripsi tentang keindahan alam Sumba Tengah.', scope_material: 'Teks Deskripsi', semester: 'Ganjil', jp_allocation: 18, meeting_count: 4, week_number: '1-4' },
+    { id: 'ATP-05', subject_id: 'SUB-MTK', grade_level: '7', phase: 'D', element: 'Bilangan', atp_code: 'MTK.7.1', tp_text: 'Menyelesaikan operasi hitung bilangan bulat dan pecahan dalam pemecahan masalah kontekstual.', scope_material: 'Bilangan Bulat & Pecahan', semester: 'Ganjil', jp_allocation: 20, meeting_count: 5, week_number: '1-5' },
+    { id: 'ATP-06', subject_id: 'SUB-PAK', grade_level: '7', phase: 'D', element: 'Allah Berkarya', atp_code: 'PAK.7.1', tp_text: 'Menghayati pemeliharaan Allah dalam kehidupan manusia dan alam ciptaan-Nya di tanah Sumba.', scope_material: 'Allah Memelihara Ciptaan-Nya', semester: 'Ganjil', jp_allocation: 12, meeting_count: 4, week_number: '1-4' }
+  ]);
+
+  // 9. AttendanceSessions & AttendanceRecords
+  writeRows('AttendanceSessions', [
+    { id: 'SES-01', teacher_class_id: 'TC-01', class_id: 'CLS-7A', subject_id: 'SUB-IPA', teacher_id: 'USR-G01', session_type: 'NH', atp_id: 'ATP-01', atp_code: 'IPA.7.1', title: 'NH 1: Pengukuran & Metode Ilmiah', session_date: '2026-08-10', kbm_activities: 'Diskusi Kelompok, Praktik/Demonstrasi', kbm_problems: 'Beberapa siswa masih ragu membaca skala jangka sorong.', kbm_solutions: 'Pendampingan praktikum berkelompok dan latihan soal.' },
+    { id: 'SES-02', teacher_class_id: 'TC-01', class_id: 'CLS-7A', subject_id: 'SUB-IPA', teacher_id: 'USR-G01', session_type: 'NH', atp_id: 'ATP-02', atp_code: 'IPA.7.2', title: 'NH 2: Perubahan Fisika & Kimia', session_date: '2026-09-07', kbm_activities: 'Ceramah Interaktif, Praktik/Demonstrasi, Asesmen Formatif', kbm_problems: 'Tidak ada kendala berarti.', kbm_solutions: 'Pengayaan materi massa jenis.' },
+    { id: 'SES-03', teacher_class_id: 'TC-01', class_id: 'CLS-7A', subject_id: 'SUB-IPA', teacher_id: 'USR-G01', session_type: 'STS', atp_id: 'ATP-02', atp_code: 'IPA.7.2', title: 'Sumatif Tengah Semester Ganjil', session_date: '2026-10-05', kbm_activities: 'Asesmen Formatif', kbm_problems: '', kbm_solutions: '' },
+    { id: 'SES-04', teacher_class_id: 'TC-03', class_id: 'CLS-7A', subject_id: 'SUB-BIN', teacher_id: 'USR-G02', session_type: 'NH', atp_id: 'ATP-04', atp_code: 'BIN.7.1', title: 'NH 1: Menulis Teks Deskripsi', session_date: '2026-08-14', kbm_activities: 'Presentasi, Penugasan', kbm_problems: '', kbm_solutions: '' },
+    { id: 'SES-05', teacher_class_id: 'TC-05', class_id: 'CLS-7A', subject_id: 'SUB-MTK', teacher_id: 'USR-G05', session_type: 'NH', atp_id: 'ATP-05', atp_code: 'MTK.7.1', title: 'NH 1: Operasi Bilangan Bulat', session_date: '2026-08-18', kbm_activities: 'Diskusi Kelompok, Penugasan', kbm_problems: '', kbm_solutions: '' }
+  ]);
+
+  writeRows('AttendanceRecords', [
+    // SES-01 (IPA.7.1)
+    { id: 'REC-01', session_id: 'SES-01', student_id: 'STD-001', status: 'H', score: 88, predicate: 'B+', note: '' },
+    { id: 'REC-02', session_id: 'SES-01', student_id: 'STD-002', status: 'H', score: 94, predicate: 'A', note: '' },
+    { id: 'REC-03', session_id: 'SES-01', student_id: 'STD-003', status: 'H', score: 78, predicate: 'B-', note: '' },
+    { id: 'REC-04', session_id: 'SES-01', student_id: 'STD-004', status: 'H', score: 85, predicate: 'B+', note: '' },
+    { id: 'REC-05', session_id: 'SES-01', student_id: 'STD-005', status: 'S', score: 80, predicate: 'B', note: 'Susulan' },
+    // SES-02 (IPA.7.2 - contoh Yulius belum tuntas < 75 agar variasi deskripsi ATP terlihat)
+    { id: 'REC-06', session_id: 'SES-02', student_id: 'STD-001', status: 'H', score: 84, predicate: 'B', note: '' },
+    { id: 'REC-07', session_id: 'SES-02', student_id: 'STD-002', status: 'H', score: 92, predicate: 'A', note: '' },
+    { id: 'REC-08', session_id: 'SES-02', student_id: 'STD-003', status: 'H', score: 68, predicate: 'C', note: 'Perlu remedial' },
+    { id: 'REC-09', session_id: 'SES-02', student_id: 'STD-004', status: 'H', score: 90, predicate: 'A-', note: '' },
+    { id: 'REC-10', session_id: 'SES-02', student_id: 'STD-005', status: 'H', score: 76, predicate: 'B-', note: '' },
+    // SES-03 (STS)
+    { id: 'REC-11', session_id: 'SES-03', student_id: 'STD-001', status: 'H', score: 86, predicate: 'B+', note: '' },
+    { id: 'REC-12', session_id: 'SES-03', student_id: 'STD-002', status: 'H', score: 91, predicate: 'A-', note: '' },
+    { id: 'REC-13', session_id: 'SES-03', student_id: 'STD-003', status: 'I', score: 72, predicate: 'C+', note: '' },
+    { id: 'REC-14', session_id: 'SES-03', student_id: 'STD-004', status: 'H', score: 88, predicate: 'B+', note: '' },
+    { id: 'REC-15', session_id: 'SES-03', student_id: 'STD-005', status: 'H', score: 79, predicate: 'B-', note: '' },
+    // SES-04 (BIN)
+    { id: 'REC-16', session_id: 'SES-04', student_id: 'STD-001', status: 'H', score: 85, predicate: 'B+', note: '' },
+    { id: 'REC-17', session_id: 'SES-04', student_id: 'STD-002', status: 'H', score: 95, predicate: 'A+', note: '' },
+    { id: 'REC-18', session_id: 'SES-04', student_id: 'STD-003', status: 'H', score: 80, predicate: 'B', note: '' },
+    { id: 'REC-19', session_id: 'SES-04', student_id: 'STD-004', status: 'H', score: 87, predicate: 'B+', note: '' },
+    { id: 'REC-20', session_id: 'SES-04', student_id: 'STD-005', status: 'H', score: 82, predicate: 'B', note: '' },
+    // SES-05 (MTK)
+    { id: 'REC-21', session_id: 'SES-05', student_id: 'STD-001', status: 'H', score: 82, predicate: 'B', note: '' },
+    { id: 'REC-22', session_id: 'SES-05', student_id: 'STD-002', status: 'H', score: 90, predicate: 'A-', note: '' },
+    { id: 'REC-23', session_id: 'SES-05', student_id: 'STD-003', status: 'H', score: 75, predicate: 'B-', note: '' },
+    { id: 'REC-24', session_id: 'SES-05', student_id: 'STD-004', status: 'H', score: 93, predicate: 'A', note: '' },
+    { id: 'REC-25', session_id: 'SES-05', student_id: 'STD-005', status: 'H', score: 78, predicate: 'B-', note: '' }
+  ]);
+
+  // 10. JurnalMengajar
+  writeRows('JurnalMengajar', [
+    { id: 'JRN-01', teacher_id: 'USR-G01', class_id: 'CLS-7A', subject_id: 'SUB-IPA', session_id: 'SES-01', journal_date: '2026-08-10', meeting_no: 1, tp_text: 'Memahami hakikat ilmu sains, alat laboratorium, serta merancang percobaan ilmiah sederhana.', material: 'Pengukuran & Metode Ilmiah', activities: 'Diskusi Kelompok, Praktik/Demonstrasi', h_count: 4, s_count: 1, i_count: 0, a_count: 0, attendance_pct: 80, problems_solutions: 'Masalah: Beberapa siswa ragu membaca skala jangka sorong. Solusi: Pendampingan praktikum berkelompok.' }
+  ]);
+
+  // 11. JadwalPelajaran
+  writeRows('JadwalPelajaran', [
+    { id: 'JDW-01', teacher_id: 'USR-G01', class_id: 'CLS-7A', subject_id: 'SUB-IPA', day_name: 'Senin', start_time: '07:30', jp_count: 3, room_note: 'Lab IPA' },
+    { id: 'JDW-02', teacher_id: 'USR-G01', class_id: 'CLS-7B', subject_id: 'SUB-IPA', day_name: 'Rabu', start_time: '09:50', jp_count: 3, room_note: 'Ruang 7B' },
+    { id: 'JDW-03', teacher_id: 'USR-G02', class_id: 'CLS-7A', subject_id: 'SUB-BIN', day_name: 'Selasa', start_time: '07:30', jp_count: 3, room_note: 'Ruang 7A' },
+    { id: 'JDW-04', teacher_id: 'USR-G05', class_id: 'CLS-7A', subject_id: 'SUB-MTK', day_name: 'Kamis', start_time: '08:10', jp_count: 3, room_note: 'Ruang 7A' }
+  ]);
+
+  // 12. AttitudeAspects & AttitudeRatings
+  writeRows('AttitudeAspects', [
+    { id: 'ASP-01', name: 'Religius & Berakhlak', description: 'Berdoa sebelum/sesudah belajar dan menghormati sesama' },
+    { id: 'ASP-02', name: 'Disiplin & Tanggung Jawab', description: 'Tepat waktu hadir dan menyelesaikan tugas' },
+    { id: 'ASP-03', name: 'Gotong Royong', description: 'Aktif bekerja sama dalam kelompok' },
+    { id: 'ASP-04', name: 'Bernalar Kritis', description: 'Aktif bertanya dan menganalisis masalah' }
+  ]);
+  writeRows('AttitudeRatings', [
+    { id: 'ATR-01', class_id: 'CLS-7A', subject_id: 'SUB-IPA', teacher_id: 'USR-G01', student_id: 'STD-001', aspect_id: 'ASP-01', score: 5 },
+    { id: 'ATR-02', class_id: 'CLS-7A', subject_id: 'SUB-IPA', teacher_id: 'USR-G01', student_id: 'STD-001', aspect_id: 'ASP-02', score: 4 },
+    { id: 'ATR-03', class_id: 'CLS-7A', subject_id: 'SUB-IPA', teacher_id: 'USR-G01', student_id: 'STD-002', aspect_id: 'ASP-01', score: 5 }
+  ]);
+
+  // 13. Ekstrakurikuler & EkskulAssessments
+  writeRows('Ekstrakurikuler', [
+    { id: 'EKS-01', name: 'Praja Muda Karana (Pramuka)', coach_id: 'USR-G03', schedule: 'Jumat, 14:30 - 16:30 WITA', is_mandatory: 'true', description: 'Pendidikan kepramukaan wajib seluruh peserta didik SMP Kristen Waibakul' },
+    { id: 'EKS-02', name: 'Sepak Bola', coach_id: 'USR-G03', schedule: 'Selasa & Kamis, 15:30 WITA', is_mandatory: 'false', description: 'Pembinaan teknik dasar dan tim sepak bola sekolah' },
+    { id: 'EKS-03', name: 'Bola Voli', coach_id: 'USR-G05', schedule: 'Rabu, 15:30 WITA', is_mandatory: 'false', description: 'Latihan bola voli putra dan putri' },
+    { id: 'EKS-04', name: 'Musik & Paduan Suara', coach_id: 'USR-G06', schedule: 'Sabtu, 09:00 WITA', is_mandatory: 'false', description: 'Seni musik tradisional Sumba dan paduan suara gerejawi' },
+    { id: 'EKS-05', name: 'Drumband', coach_id: 'USR-G04', schedule: 'Sabtu, 10:30 WITA', is_mandatory: 'false', description: 'Gita Bahana SMPK Waibakul' }
+  ]);
+
+  const allStudents = ['STD-001', 'STD-002', 'STD-003', 'STD-004', 'STD-005', 'STD-006', 'STD-007', 'STD-008', 'STD-009'];
+  const pramukaAssessments = allStudents.map((sid, idx) => ({
+    id: 'EKA-PRM-' + (idx + 1),
+    ekskul_id: 'EKS-01',
+    student_id: sid,
+    predicate: idx % 3 === 0 ? 'Sangat Baik' : 'Baik',
+    note: 'Aktif mengikuti latihan kepramukaan, baris-berbaris, dan kegiatan kemah bakti.',
+    semester: 'Ganjil'
+  }));
+  writeRows('EkskulAssessments', [
+    ...pramukaAssessments,
+    { id: 'EKA-OPT-1', ekskul_id: 'EKS-02', student_id: 'STD-001', predicate: 'Sangat Baik', note: 'Menunjukkan kerja sama tim dan sportivitas tinggi dalam latihan sepak bola.', semester: 'Ganjil' },
+    { id: 'EKA-OPT-2', ekskul_id: 'EKS-04', student_id: 'STD-002', predicate: 'Sangat Baik', note: 'Memiliki vokal yang baik dan disiplin mengikuti latihan paduan suara.', semester: 'Ganjil' }
+  ]);
+
+  // 14. KokurikulerProjects & KokurikulerEvaluations
+  writeRows('KokurikulerProjects', [
+    {
+      id: 'PRJ-01',
+      title: 'Tenun Ikat & Kearifan Lokal Sumba Tengah',
+      theme: 'Kearifan Lokal',
+      description: 'Eksplorasi filosofi motif tenun ikat Sumba Tengah serta pelestarian budaya lokal bersama pengrajin Waibakul.',
+      dimensions: 'Berkebinekaan Global, Gotong Royong, Kreatif',
+      target_classes: 'CLS-7A,CLS-7B',
+      coordinator_id: 'USR-G01',
+      facilitator_ids: 'USR-G01,USR-G02,USR-G04',
+      schedule_block: 'Agustus - Oktober 2026 (Setiap Sabtu Pekan 2 & 4)',
+      academic_year: '2026/2027',
+      status: 'Berjalan'
+    },
+    {
+      id: 'PRJ-02',
+      title: 'Pengolahan Sampah Organik & Kebun Gizi Sekolah',
+      theme: 'Gaya Hidup Berkelanjutan',
+      description: 'Pembuatan kompos dan budidaya sayuran organik di pekarangan SMP Kristen Waibakul.',
+      dimensions: 'Beriman & Bertakwa, Gotong Royong, Bernalar Kritis',
+      target_classes: 'CLS-8A,CLS-9A',
+      coordinator_id: 'USR-G05',
+      facilitator_ids: 'USR-G05,USR-G06',
+      schedule_block: 'September - November 2026',
+      academic_year: '2026/2027',
+      status: 'Berjalan'
+    }
+  ]);
+
+  writeRows('KokurikulerEvaluations', [
+    {
+      id: 'P5E-01',
+      project_id: 'PRJ-01',
+      student_id: 'STD-001',
+      class_id: 'CLS-7A',
+      dimension_scores: JSON.stringify({ 'Berkebinekaan Global': 'BSH', 'Gotong Royong': 'SAB', 'Kreatif': 'BSH' }),
+      final_predicate: 'BSH',
+      note: 'Mampu bekerja sama sangat baik dalam kelompok wawancara pengrajin tenun dan mempresentasikan makna motif dengan percaya diri.',
+      reviewed_by: 'Debora Rambu Ngana, S.Pd.'
+    },
+    {
+      id: 'P5E-02',
+      project_id: 'PRJ-01',
+      student_id: 'STD-002',
+      class_id: 'CLS-7A',
+      dimension_scores: JSON.stringify({ 'Berkebinekaan Global': 'SAB', 'Gotong Royong': 'SAB', 'Kreatif': 'SAB' }),
+      final_predicate: 'SAB',
+      note: 'Sangat menonjol dalam kreativitas dokumentasi proyek dan menghargai keragaman budaya lokal Sumba.',
+      reviewed_by: 'Debora Rambu Ngana, S.Pd.'
+    }
+  ]);
+
+  // 15. GuruWaliRecords
+  writeRows('GuruWaliRecords', [
+    { id: 'GWR-01', guru_wali_id: 'USR-G01', student_id: 'STD-001', semester: 'Ganjil', disiplin: 5, kemandirian: 4, kejujuran: 5, relasi_sosial: 5, spiritual: 5, keaktifan: 4, note: 'Markus menunjukkan perkembangan karakter dan kepedulian sosial yang sangat positif di kelas.', recommendation: 'Pertahankan kedisiplinan dan tingkatkan keaktifan bertanya di kelas.' },
+    { id: 'GWR-02', guru_wali_id: 'USR-G01', student_id: 'STD-002', semester: 'Ganjil', disiplin: 5, kemandirian: 5, kejujuran: 5, relasi_sosial: 5, spiritual: 5, keaktifan: 5, note: 'Elsi menjadi teladan bagi teman-temannya dalam ibadah pagi dan ketekunan belajar.', recommendation: 'Dapat diikutsertakan dalam olimpiade sains tingkat kabupaten.' }
+  ]);
+
+  // 16. AdditionalAssignments (Kepanitiaan & Lomba)
+  writeRows('AdditionalAssignments', [
+    { id: 'ADD-01', category: 'Kepanitiaan', title: 'Panitia Asesmen Sumatif Tengah Semester (ASTS) Ganjil', pj_id: 'USR-G01', member_ids: 'USR-G01,USR-G02,USR-G05', sk_number: '421.3/045/SMPK-WBK/IX/2026', location: 'SMP Kristen Waibakul', start_date: '2026-10-01', end_date: '2026-10-10', status: 'Aktif' },
+    { id: 'ADD-02', category: 'Pembimbingan Lomba', title: 'Pembimbingan OSN IPA & Matematika Tingkat Kab. Sumba Tengah', pj_id: 'USR-G05', member_ids: 'USR-G01,USR-G05', sk_number: '421.3/052/SMPK-WBK/IX/2026', location: 'Waibakul', start_date: '2026-09-15', end_date: '2026-11-20', status: 'Aktif' }
+  ]);
+
+  // 17. PelanggaranSiswa, PrestasiSiswa, OsisMembers, PembiasaanKarakter
+  writeRows('PelanggaranSiswa', [
+    { id: 'PLG-01', student_id: 'STD-003', reporter_id: 'USR-G03', incident_date: '2026-09-12', category: 'Ringan', description: 'Terlambat mengikuti apel pagi 15 menit tanpa keterangan.', points: 5, sanction: 'Teguran lisan dan membersihkan taman depan kelas.', status: 'Selesai' },
+    { id: 'PLG-02', student_id: 'STD-007', reporter_id: 'USR-G02', incident_date: '2026-10-02', category: 'Sedang', description: 'Tidak mengenakan atribut seragam lengkap saat upacara bendera.', points: 15, sanction: 'Pembinaan oleh Wali Kelas & Waka Kesiswaan.', status: 'Dalam Pembinaan' }
+  ]);
+  writeRows('PrestasiSiswa', [
+    { id: 'PRS-01', student_id: 'STD-002', title: 'Juara 1 Lomba Pidato Bahasa Indonesia Tingkat SMP', level: 'Kabupaten', rank: 'Juara 1', event_date: '2026-08-17', organizer: 'Dinas Pendidikan Kab. Sumba Tengah' }
+  ]);
+  writeRows('OsisMembers', [
+    { id: 'OSI-01', student_id: 'STD-009', position: 'Ketua OSIS', division: 'Pengurus Inti', period: '2026/2027', status: 'Aktif' },
+    { id: 'OSI-02', student_id: 'STD-008', position: 'Sekretaris OSIS', division: 'Pengurus Inti', period: '2026/2027', status: 'Aktif' }
+  ]);
+  writeRows('PembiasaanKarakter', [
+    { id: 'PMB-01', activity_date: '2026-10-12', activity_name: 'Ibadah Pagi Bersama & Renungan Firman', category: 'Spiritual', coordinator_id: 'USR-G06', participation_pct: 98, note: 'Berjalan khidmat di aula sekolah.' }
+  ]);
+
+  // 18. KaldikEvents & SupervisiGuru
+  writeRows('KaldikEvents', [
+    { id: 'KLD-01', start_date: '2026-07-13', end_date: '2026-07-15', title: 'MPLS Peserta Didik Baru T.A. 2026/2027', category: 'Kesiswaan', description: 'Masa Pengenalan Lingkungan Sekolah' },
+    { id: 'KLD-02', start_date: '2026-10-05', end_date: '2026-10-10', title: 'Sumatif Tengah Semester (STS) Ganjil', category: 'Akademik', description: 'Evaluasi tengah semester seluruh jenjang' },
+    { id: 'KLD-03', start_date: '2026-12-18', end_date: '2026-12-18', title: 'Pembagian Raport Semester Ganjil', category: 'Akademik', description: 'Penyerahan LHB kepada orang tua/wali' }
+  ]);
+  writeRows('SupervisiGuru', [
+    { id: 'SPV-01', teacher_id: 'USR-G02', supervisor_id: 'USR-KS', supervision_date: '2026-09-20', subject_id: 'SUB-BIN', has_modul: 'Ya', has_atp: 'Ya', has_asesmen: 'Ya', has_jurnal: 'Ya', score: 94, feedback: 'Perangkat ajar lengkap dan pembelajaran berdiferensiasi berjalan sangat baik.' }
+  ]);
+
+  // 19. Humas (KemitraanKomite, MouKerjasama, PublikasiSekolah, BukuTamu)
+  writeRows('KemitraanKomite', [
+    { id: 'KMT-01', agenda_date: '2026-08-05', topic: 'Rapat Pleno Program Kerja Sekolah & Dukungan Literasi', participants: 'Pengurus Komite, Kepala Sekolah, Wali Murid', decision: 'Disepakati dukungan pengadaan pojok baca di setiap ruang kelas.', status: 'Terlaksana' }
+  ]);
+  writeRows('MouKerjasama', [
+    { id: 'MOU-01', partner_name: 'Puskesmas Waibakul', scope: 'Pemeriksaan Kesehatan Berkala, UKS & Imunisasi Remaja', start_date: '2026-07-01', end_date: '2027-06-30', pic_name: 'Ester Lende Bora, S.Pd.', status: 'Aktif' }
+  ]);
+  writeRows('PublikasiSekolah', [
+    { id: 'PUB-01', pub_date: '2026-08-18', title: 'SMP Kristen Waibakul Raih Juara 1 Pidato HUT RI ke-81', channel: 'Website & Media Sosial Sekolah', author_id: 'USR-G04', summary: 'Siswi kelas 7A Elsi Rambu Kahi mengharumkan nama sekolah di tingkat Kabupaten Sumba Tengah.' }
+  ]);
+  writeRows('BukuTamu', [
+    { id: 'BTM-01', visit_date: '2026-09-10', guest_name: 'Drs. Paulus Umbu Nggiku', institution: 'Pengawas Pembina Dinas PPO Sumba Tengah', purpose: 'Monitoring Kesiapan Implementasi Kurikulum & P5', met_with: 'Kepala Sekolah & Waka Kurikulum' }
+  ]);
+
+  // 20. Sarpras (InventarisRuang, BarangSarpras, TiketPerbaikan, PeminjamanSarpras)
+  writeRows('InventarisRuang', [
+    { id: 'RNG-01', room_code: 'R-7A', room_name: 'Ruang Kelas 7A', condition: 'Baik', capacity: 32, pic_name: 'Yohanes Umbu Deta, S.Pd.' },
+    { id: 'RNG-02', room_code: 'LAB-IPA', room_name: 'Laboratorium IPA', condition: 'Baik', capacity: 30, pic_name: 'Yohanes Umbu Deta, S.Pd.' }
+  ]);
+  writeRows('BarangSarpras', [
+    { id: 'BRG-01', item_code: 'KIB-B-001', item_name: 'Proyektor Epson EB-X500', room_id: 'LAB-IPA', quantity: 2, condition: 'Baik', source_fund: 'BOS Reguler 2026' },
+    { id: 'BRG-02', item_code: 'KIB-B-002', item_name: 'Mikroskop Binokuler Siswa', room_id: 'LAB-IPA', quantity: 8, condition: 'Baik', source_fund: 'DAK Pendidikan' }
+  ]);
+  writeRows('TiketPerbaikan', [
+    { id: 'TKT-01', report_date: '2026-10-08', reporter_id: 'USR-G02', item_name: 'Kunci Pintu Ruang Kelas 7B', location: 'Ruang 7B', issue_desc: 'Silinder kunci macet saat dibuka pagi hari.', priority: 'Tinggi', status: 'Diproses' }
+  ]);
+  writeRows('PeminjamanSarpras', [
+    { id: 'PJM-01', borrow_date: '2026-10-14', return_date: '2026-10-14', borrower_name: 'Debora Rambu Ngana, S.Pd.', item_name: 'Sound System Portable & Mic Wireless', quantity: 1, purpose: 'Gelar Karya P5 Tenun Ikat', status: 'Dipinjam' }
+  ]);
+
+  // 21. Announcements
+  writeRows('Announcements', [
+    { id: 'ANN-01', created_at: '2026-10-15 08:00', author_id: 'USR-G01', author_name: 'Yohanes Umbu Deta, S.Pd. (Waka Kurikulum)', category: 'Akademik', priority: 'Penting', is_pinned: 'true', title: 'Batas Akhir Penginputan Nilai STS & Jurnal Mengajar', content: 'Diberitahukan kepada seluruh Bapak/Ibu Guru Mata Pelajaran SMP Kristen Waibakul agar segera melengkapi nilai Sumatif Tengah Semester (STS) dan menyinkronkan Jurnal Mengajar paling lambat hari Jumat pukul 14.00 WITA.' },
+    { id: 'ANN-02', created_at: '2026-10-12 09:30', author_id: 'USR-KS', author_name: 'Pdt. Kornelis Umbu Tay, S.Th., M.Pd.', category: 'Kedinasan', priority: 'Biasa', is_pinned: 'false', title: 'Ibadah Syukur Bulanan & Rapat Koordinasi GTK', content: 'Mengundang seluruh pendidik dan tenaga kependidikan untuk hadir dalam Ibadah Syukur Bulanan di Aula SMP Kristen Waibakul pada hari Sabtu pukul 08.00 WITA.' }
+  ]);
+
+  // 22. ActivityLogs
+  writeRows('ActivityLogs', [
+    { id: 'LOG-01', timestamp: Utilities.formatDate(new Date(), 'Asia/Makassar', 'yyyy-MM-dd HH:mm:ss'), user_id: 'USR-ADM', user_name: 'Melkianus Lede, S.Kom.', role: 'admin', action: 'INIT_DB', detail: 'Inisialisasi database awal SMP Kristen Waibakul T.A. 2026/2027' }
+  ]);
+}
+
+/**
+ * ============================================================================
+ * HELPER PEMBACAAN & PENULISAN SHEET (THREAD-SAFE DENGAN LOCKSERVICE)
+ * ============================================================================
+ */
+function readSheetData(sheetName) {
+  const ss = getSpreadsheet_();
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet || sheet.getLastRow() <= 1) return [];
+  const data = sheet.getDataRange().getValues();
+  const ssTz = ss.getSpreadsheetTimeZone();
+  const headers = data[0];
+  const rows = [];
+  for (let i = 1; i < data.length; i++) {
+    const obj = {};
+    headers.forEach((h, idx) => {
+      let val = data[i][idx];
+      if (val instanceof Date) {
+        const yr = Number(Utilities.formatDate(val, ssTz, 'yyyy'));
+        val = yr < 1950 ? Utilities.formatDate(val, ssTz, 'HH:mm') : Utilities.formatDate(val, ssTz, 'yyyy-MM-dd');
+      }
+      obj[h] = val;
+    });
+    rows.push(obj);
+  }
+  return rows;
+}
+
+function normalizeTimeValue_(value) {
+  if (value instanceof Date) {
+    return Utilities.formatDate(value, getSpreadsheet_().getSpreadsheetTimeZone(), 'HH:mm');
+  }
+  const raw = String(value == null ? '' : value).trim();
+  if (!raw) return '';
+  // Menerima format input 07:45, 7:45, 07.45, dan nilai waktu Sheets lama (1899-12-30).
+  let m = /^(?:1899-12-30[T ]?)?(\d{1,2})[:.](\d{2})(?::\d{2}(?:\.\d+)?)?(?:Z)?$/i.exec(raw);
+  if (!m) m = /^1899-12-30T(\d{1,2}):(\d{2})/i.exec(raw);
+  if (!m) throw new Error('Format jam tidak valid: ' + raw + '. Gunakan HH:mm, contoh 07:45.');
+  const h = Number(m[1]), min = Number(m[2]);
+  if (h < 0 || h > 23 || min < 0 || min > 59) throw new Error('Jam di luar rentang yang valid: ' + raw);
+  return ('0' + h).slice(-2) + ':' + ('0' + min).slice(-2);
+}
+
+function generateId(prefix) {
+  return prefix + '-' + new Date().getTime().toString(36).toUpperCase() + Math.floor(Math.random() * 90 + 10);
+}
+
+function logActivity(userId, userName, role, action, detail) {
+  try {
+    const ss = getSpreadsheet_();
+    const sheet = ss.getSheetByName('ActivityLogs');
+    if (!sheet) return;
+    const ts = Utilities.formatDate(new Date(), 'Asia/Makassar', 'yyyy-MM-dd HH:mm:ss');
+    sheet.appendRow([generateId('LOG'), ts, userId || 'SYS', userName || 'System', role || '-', action, detail]);
+  } catch (e) {
+    // Abaikan jika gagal log agar tidak mengganggu transaksi utama
+  }
+}
+
+/**
+ * ============================================================================
+ * RUMUS PENILAIAN TERPADU & DESKRIPSI ALUR TP (SHARED ENGINE)
+ * ============================================================================
+ */
+function shortenTpText(text, maxLen) {
+  const clean = String(text || '').trim().replace(/\.$/, '');
+  if (clean.length <= maxLen) return clean;
+  const sub = clean.substring(0, maxLen);
+  const lastSpace = sub.lastIndexOf(' ');
+  return (lastSpace > 20 ? sub.substring(0, lastSpace) : sub) + '...';
+}
+
+function computeStudentSubjectSummary(studentId, classId, subjectId, kkm, sessions, records, atpList, gradeLevel) {
+  const kkmNum = Number(kkm) || 75;
+  const relevantSessions = sessions.filter(s => String(s.class_id) === String(classId) && String(s.subject_id) === String(subjectId));
+  const sessionMap = {};
+  relevantSessions.forEach(s => { sessionMap[s.id] = s; });
+
+  const studentRecords = records.filter(r => String(r.student_id) === String(studentId) && sessionMap[r.session_id]);
+
+  const nhScores = [];
+  const stsScores = [];
+  const sasScores = [];
+  const atpScoresMap = {}; // atpKey -> { tp_text, scores: [] }
+
+  const atpById = {};
+  const atpByCode = {};
+  atpList.forEach(a => {
+    atpById[a.id] = a;
+    if (a.atp_code) atpByCode[a.atp_code] = a;
+  });
+
+  studentRecords.forEach(rec => {
+    if (rec.score === '' || rec.score === null || rec.score === undefined || isNaN(Number(rec.score))) return;
+    const numScore = Number(rec.score);
+    const sess = sessionMap[rec.session_id];
+    const type = String(sess.session_type || 'NH').toUpperCase();
+
+    if (type === 'NH') nhScores.push(numScore);
+    else if (type === 'STS') stsScores.push(numScore);
+    else if (type === 'SAS') sasScores.push(numScore);
+    else nhScores.push(numScore);
+
+    // Kelompokkan per ATP / TP
+    const atpObj = atpById[sess.atp_id] || atpByCode[sess.atp_code];
+    if (atpObj) {
+      if (!atpScoresMap[atpObj.id]) {
+        atpScoresMap[atpObj.id] = { id: atpObj.id, code: atpObj.atp_code, tp_text: atpObj.tp_text, scores: [] };
+      }
+      atpScoresMap[atpObj.id].scores.push(numScore);
+    }
+  });
+
+  const avgArr = arr => arr.length > 0 ? (arr.reduce((a, b) => a + b, 0) / arr.length) : null;
+  const avgNH = avgArr(nhScores);
+  const avgSTS = avgArr(stsScores);
+  const avgSAS = avgArr(sasScores);
+
+  const components = [avgNH, avgSTS, avgSAS].filter(v => v !== null);
+  const finalScore = components.length > 0 ? Math.round(avgArr(components)) : null;
+
+  let predicate = '-';
+  let predicateFull = '-';
+  if (finalScore !== null) {
+    if (finalScore >= 90) { predicate = 'A'; predicateFull = 'A (Sangat Baik)'; }
+    else if (finalScore >= kkmNum) { predicate = 'B'; predicateFull = 'B (Baik)'; }
+    else if (finalScore >= 60) { predicate = 'C'; predicateFull = 'C (Cukup)'; }
+    else { predicate = 'D'; predicateFull = 'D (Perlu Bimbingan)'; }
+  }
+
+  // Susun Deskripsi Capaian Kompetensi / Alur TP
+  let description = 'Belum terdapat data penilaian pada semester ini.';
+  const evaluatedAtps = Object.values(atpScoresMap).map(item => ({
+    ...item,
+    avg: Math.round(avgArr(item.scores))
+  }));
+
+  if (finalScore !== null) {
+    const tuntasAtps = evaluatedAtps.filter(a => a.avg >= kkmNum).sort((a, b) => b.avg - a.avg);
+    const belumTuntasAtps = evaluatedAtps.filter(a => a.avg < kkmNum).sort((a, b) => a.avg - b.avg);
+
+    if (tuntasAtps.length > 0 && belumTuntasAtps.length > 0) {
+      // Kondisi 1: Ada tuntas & ada belum tuntas -> 1 terbaik + 1 terendah
+      const top1 = tuntasAtps[0];
+      const low1 = belumTuntasAtps[0];
+      description = `Sudah tuntas dalam ${shortenTpText(top1.tp_text, 78)}, namun perlu perbaikan pada ${shortenTpText(low1.tp_text, 78)}.`;
+    } else if (belumTuntasAtps.length > 0) {
+      // Kondisi 2: Semua TP belum tuntas -> max 2 terendah
+      const picks = belumTuntasAtps.slice(0, 2).map(a => shortenTpText(a.tp_text, 75)).join(' serta ');
+      description = `Perlu pendampingan dan perbaikan pada capaian ${picks}.`;
+    } else if (tuntasAtps.length > 0) {
+      // Kondisi 3: Semua TP tuntas -> max 2 terbaik
+      const picks = tuntasAtps.slice(0, 2).map(a => shortenTpText(a.tp_text, 78)).join(' dan ');
+      const prefix = finalScore >= 90 ? 'Menunjukkan penguasaan sangat optimal dalam ' : 'Sudah tuntas dengan baik dalam ';
+      description = `${prefix}${picks}.`;
+    } else {
+      // Kondisi 4: Fallback ke master CP/ATP mapel & jenjang kelas
+      const fallbackAtps = atpList
+        .filter(a => String(a.subject_id) === String(subjectId) && (!gradeLevel || String(a.grade_level) === String(gradeLevel)))
+        .slice(0, 2);
+      if (fallbackAtps.length > 0) {
+        const tpSummary = fallbackAtps.map(a => shortenTpText(a.tp_text, 78)).join(' serta ');
+        if (finalScore >= kkmNum) {
+          description = `Sudah tuntas menguasai capaian pembelajaran ${tpSummary}.`;
+        } else {
+          description = `Perlu bimbingan lebih lanjut dalam ${tpSummary}.`;
+        }
+      } else {
+        description = finalScore >= kkmNum
+          ? `Menunjukkan penguasaan capaian pembelajaran dengan baik.`
+          : `Masih memerlukan bimbingan dan latihan terstruktur pada capaian pembelajaran.`;
+      }
+    }
+  }
+
+  return {
+    avgNH: avgNH !== null ? Math.round(avgNH) : null,
+    avgSTS: avgSTS !== null ? Math.round(avgSTS) : null,
+    avgSAS: avgSAS !== null ? Math.round(avgSAS) : null,
+    finalScore,
+    predicate,
+    predicateFull,
+    description
+  };
+}
+
+/**
+ * ============================================================================
+ * API ENDPOINTS UNTUK FRONTEND (`google.script.run`)
+ * ============================================================================
+ */
+
+/**
+ * Mengambil seluruh data master & transaksional dalam satu panggilan cepat
+ */
+function getInitialBootstrapData() {
+  ensureDatabaseInitialized();
+  fillMissingIds_('KehadiranGTK', 'KGT');
+  try { normalizeStudentsSheet_(); } catch (e) { console.error('normalizeStudentsSheet_: ' + e); }
+  const payload = {};
+  const warnings = [];
+  Object.keys(SCHEMA_DEF).forEach(sheetName => {
+    try { payload[sheetName] = readSheetData(sheetName); }
+    catch (err) { payload[sheetName] = []; warnings.push(sheetName + ': ' + err); }
+  });
+  // Sembunyikan password saat dikirim ke client (kecuali untuk validasi login server-side)
+  payload.UsersPublic = payload.Users.map(u => {
+    const copy = Object.assign({}, u);
+    delete copy.password;
+    return copy;
+  });
+  delete payload.Users;
+  payload._warnings = warnings;
+  // Pastikan hanya nilai yang bisa diserialisasi (Date/undefined/NaN membuat google.script.run mengembalikan null)
+  return JSON.parse(JSON.stringify(payload));
+}
+
+/**
+ * Autentikasi Login & Resolusi Multi-Jabatan
+ */
+function authenticateUser(loginPayload) {
+  ensureDatabaseInitialized();
+  const users = readSheetData('Users');
+  const jabatans = readSheetData('TeacherJabatans');
+  const classes = readSheetData('Classes');
+
+  let matchedUser = null;
+  if (loginPayload.mode === 'quick') {
+    matchedUser = users.find(u => u.id === loginPayload.userId && u.status === 'Aktif');
+  } else {
+    const uname = String(loginPayload.username || '').trim().toLowerCase();
+    const pwd = String(loginPayload.password || '').trim();
+    matchedUser = users.find(u => String(u.username).toLowerCase() === uname && String(u.password) === pwd && u.status === 'Aktif');
+  }
+
+  if (!matchedUser) {
+    return { success: false, message: 'Username atau password tidak sesuai / akun tidak aktif.' };
+  }
+
+  const roles = buildUserRolesList(matchedUser, jabatans, classes);
+  const safeUser = Object.assign({}, matchedUser);
+  delete safeUser.password;
+
+  logActivity(safeUser.id, safeUser.full_name, safeUser.role, 'LOGIN', 'Berhasil masuk ke sistem');
+  return {
+    success: true,
+    user: safeUser,
+    availableRoles: roles
+  };
+}
+
+function buildUserRolesList(user, jabatans, classes) {
+  const list = [];
+  const roleLabels = {
+    admin: 'Administrator Sistem',
+    kepala_sekolah: 'Kepala Sekolah',
+    guru: 'Guru Mata Pelajaran',
+    wali_kelas: 'Wali Kelas',
+    waka_kurikulum: 'Wakil Kepala Sekolah Bidang Kurikulum',
+    waka_kesiswaan: 'Wakil Kepala Sekolah Bidang Kesiswaan',
+    waka_humas: 'Wakil Kepala Sekolah Bidang Humas',
+    waka_sarpras: 'Wakil Kepala Sekolah Bidang Sarpras',
+    admin_kokurikuler: 'Admin Kokurikuler (P5)',
+    wali_murid: 'Orang Tua / Wali Murid'
+  };
+
+  // Role utama
+  list.push({
+    role_key: user.role,
+    label: roleLabels[user.role] || user.role,
+    target_id: '',
+    detail: user.role === 'guru' ? 'Panel Guru Pengajar & Wali Siswa' : 'Akses Utama'
+  });
+
+  // Cek apakah guru adalah Wali Kelas di tabel Classes
+  classes.filter(c => c.wali_kelas_id === user.id).forEach(cls => {
+    const exists = list.some(r => r.role_key === 'wali_kelas' && r.target_id === cls.id);
+    if (!exists) {
+      list.push({
+        role_key: 'wali_kelas',
+        label: `Wali Kelas ${cls.name}`,
+        target_id: cls.id,
+        detail: `Rombongan Belajar Kelas ${cls.name}`
+      });
+    }
+  });
+
+  // Cek TeacherJabatans aktif
+  jabatans.filter(j => j.teacher_id === user.id && j.status === 'Aktif').forEach(jab => {
+    const rk = jab.role_key || 'guru';
+    const exists = list.some(r => r.role_key === rk && String(r.target_id || '') === String(jab.target_id || ''));
+    if (!exists && rk !== 'guru') {
+      list.push({
+        role_key: rk,
+        label: jab.jabatan_name,
+        target_id: jab.target_id || '',
+        detail: jab.sk_number ? `SK: ${jab.sk_number}` : 'Tugas Tambahan Aktif'
+      });
+    }
+  });
+
+  return list;
+}
+
+/**
+ * GENERIC CRUD ENGINE (CREATE / UPDATE / DELETE) DENGAN LOCKSERVICE
+ */
+function saveRecord(sheetName, recordObj, actor) {
+  if (!SCHEMA_DEF[sheetName]) {
+    throw new Error('Sheet tidak dikenali: ' + sheetName);
+  }
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const ss = getSpreadsheet_();
+    const sheet = ss.getSheetByName(sheetName);
+    const headers = SCHEMA_DEF[sheetName];
+    applyTextCols_(sheet, sheetName);
+    const data = sheet.getDataRange().getValues();
+
+    let isNew = false;
+    if (!recordObj.id) {
+      recordObj.id = generateId(sheetName.substring(0, 3).toUpperCase());
+      isNew = true;
+    }
+
+    // Jika Users baru tanpa password, beri default 123456
+    if (sheetName === 'Users' && isNew && !recordObj.password) {
+      recordObj.password = '123456';
+    }
+
+    let rowIndex = -1;
+    const idColIdx = headers.indexOf('id');
+    if (idColIdx >= 0 && !isNew) {
+      for (let i = 1; i < data.length; i++) {
+        if (String(data[i][idColIdx]) === String(recordObj.id)) {
+          rowIndex = i + 1;
+          break;
+        }
+      }
+    }
+
+    // Pertahankan password lama jika Users diupdate tanpa mengisi password baru
+    if (sheetName === 'Users' && rowIndex > 0 && !recordObj.password) {
+      const pwdIdx = headers.indexOf('password');
+      recordObj.password = data[rowIndex - 1][pwdIdx];
+    }
+
+    // Simpan jam sebagai teks HH:mm agar Google Sheets tidak mengubahnya menjadi tanggal 30-12-1899.
+    if (sheetName === 'JadwalPelajaran') {
+      recordObj.start_time = normalizeTimeValue_(recordObj.start_time);
+    } else if (sheetName === 'JamPelajaran') {
+      recordObj.start_time = normalizeTimeValue_(recordObj.start_time);
+      recordObj.end_time = normalizeTimeValue_(recordObj.end_time);
+    }
+
+    const rowValues = headers.map(h => (recordObj[h] !== undefined && recordObj[h] !== null) ? recordObj[h] : '');
+
+    if (rowIndex > 0) {
+      sheet.getRange(rowIndex, 1, 1, headers.length).setValues([rowValues]);
+    } else {
+      isNew = true;
+      sheet.appendRow(rowValues);
+    }
+
+    // ATURAN KHUSUS: Jika menambah Siswa baru -> otomatis masukkan ke Ekskul wajib Pramuka
+    if (sheetName === 'Students' && isNew) {
+      const ekskuls = readSheetData('Ekstrakurikuler');
+      const pramuka = ekskuls.find(e => String(e.is_mandatory) === 'true' || String(e.name).toLowerCase().includes('pramuka'));
+      if (pramuka) {
+        const ekaSheet = ss.getSheetByName('EkskulAssessments');
+        ekaSheet.appendRow([generateId('EKA'), pramuka.id, recordObj.id, 'Baik', 'Aktif mengikuti kegiatan kepramukaan.', getSetting_('active_semester', APP_CONFIG.DEFAULT_SEMESTER)]);
+      }
+    }
+
+    logActivity(
+      actor ? actor.id : 'SYS',
+      actor ? actor.full_name : 'System',
+      actor ? actor.activeRole : '-',
+      isNew ? 'CREATE_' + sheetName : 'UPDATE_' + sheetName,
+      `ID: ${recordObj.id}`
+    );
+
+    return { success: true, record: recordObj, isNew };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function deleteRecord(sheetName, recordId, actor) {
+  if (!SCHEMA_DEF[sheetName]) {
+    throw new Error('Sheet tidak dikenali: ' + sheetName);
+  }
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const ss = getSpreadsheet_();
+    const sheet = ss.getSheetByName(sheetName);
+    const headers = SCHEMA_DEF[sheetName];
+    const idColIdx = headers.indexOf('id');
+    const data = sheet.getDataRange().getValues();
+
+    for (let i = data.length - 1; i >= 1; i--) {
+      if (String(data[i][idColIdx]) === String(recordId)) {
+        sheet.deleteRow(i + 1);
+      }
+    }
+
+    logActivity(
+      actor ? actor.id : 'SYS',
+      actor ? actor.full_name : 'System',
+      actor ? actor.activeRole : '-',
+      'DELETE_' + sheetName,
+      `ID: ${recordId}`
+    );
+    return { success: true };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Batch Simpan Absensi & Nilai Siswa dalam satu sesi
+ */
+function saveSessionAttendanceBatch(sessionId, recordsList, actor) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try {
+    const ss = getSpreadsheet_();
+    const sheet = ss.getSheetByName('AttendanceRecords');
+    const headers = SCHEMA_DEF['AttendanceRecords'];
+    const data = sheet.getDataRange().getValues();
+
+    // Map existing records by session_id + student_id
+    const existingMap = {};
+    for (let i = 1; i < data.length; i++) {
+      const key = `${data[i][1]}_${data[i][2]}`;
+      existingMap[key] = i + 1;
+    }
+
+    const toAppend = [];
+    recordsList.forEach(item => {
+      const key = `${sessionId}_${item.student_id}`;
+      const recId = item.id || generateId('REC');
+      const rowVals = [
+        recId,
+        sessionId,
+        item.student_id,
+        item.status || 'H',
+        item.score !== '' && item.score !== null && item.score !== undefined ? Number(item.score) : '',
+        item.predicate || '',
+        item.note || ''
+      ];
+      if (existingMap[key]) {
+        sheet.getRange(existingMap[key], 1, 1, headers.length).setValues([rowVals]);
+      } else {
+        toAppend.push(rowVals);
+      }
+    });
+
+    if (toAppend.length > 0) {
+      sheet.getRange(sheet.getLastRow() + 1, 1, toAppend.length, headers.length).setValues(toAppend);
+    }
+
+    logActivity(actor?.id, actor?.full_name, actor?.activeRole, 'BATCH_ATTENDANCE_SCORE', `Sesi ${sessionId} (${recordsList.length} siswa)`);
+    return { success: true };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Buat banyak sesi otomatis dari Prota
+ */
+function createSessionsFromProta(payload, actor) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const ss = getSpreadsheet_();
+    const sheet = ss.getSheetByName('AttendanceSessions');
+    const headers = SCHEMA_DEF['AttendanceSessions'];
+
+    const count = Math.max(1, Math.min(20, Number(payload.meeting_count) || 1));
+    const intervalDays = Math.max(1, Number(payload.interval_days) || 7);
+    const baseDate = new Date(payload.start_date || new Date());
+
+    const created = [];
+    const rowsToAppend = [];
+
+    for (let i = 0; i < count; i++) {
+      const d = new Date(baseDate.getTime() + i * intervalDays * 86400000);
+      const dateStr = Utilities.formatDate(d, 'Asia/Makassar', 'yyyy-MM-dd');
+      const rec = {
+        id: generateId('SES'),
+        teacher_class_id: payload.teacher_class_id,
+        class_id: payload.class_id,
+        subject_id: payload.subject_id,
+        teacher_id: payload.teacher_id,
+        session_type: payload.session_type || 'NH',
+        atp_id: payload.atp_id || '',
+        atp_code: payload.atp_code || '',
+        title: `${payload.title_prefix} — Pertemuan ${i + 1}`,
+        session_date: dateStr,
+        kbm_activities: '',
+        kbm_problems: '',
+        kbm_solutions: ''
+      };
+      created.push(rec);
+      rowsToAppend.push(headers.map(h => rec[h]));
+    }
+
+    if (rowsToAppend.length > 0) {
+      sheet.getRange(sheet.getLastRow() + 1, 1, rowsToAppend.length, headers.length).setValues(rowsToAppend);
+    }
+
+    logActivity(actor?.id, actor?.full_name, actor?.activeRole, 'GENERATE_SESSIONS_PROTA', `${count} sesi dibuat`);
+    return { success: true, sessions: created };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Backup Seluruh Database ke JSON
+ */
+function exportDatabaseJson() {
+  const full = {};
+  Object.keys(SCHEMA_DEF).forEach(name => {
+    full[name] = readSheetData(name);
+  });
+  return JSON.stringify(full, null, 2);
+}
+
+/**
+ * Restore Database dari JSON
+ */
+function importDatabaseJson(jsonString, actor) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const parsed = JSON.parse(jsonString);
+    const ss = getSpreadsheet_();
+    Object.keys(SCHEMA_DEF).forEach(sheetName => {
+      if (Array.isArray(parsed[sheetName])) {
+        const sheet = ss.getSheetByName(sheetName);
+        const headers = SCHEMA_DEF[sheetName];
+        if (sheet.getLastRow() > 1) {
+          sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
+        }
+        const rows = parsed[sheetName].map(obj => headers.map(h => obj[h] !== undefined ? obj[h] : ''));
+        if (rows.length > 0) {
+          sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
+        }
+      }
+    });
+    logActivity(actor?.id, actor?.full_name, actor?.activeRole, 'RESTORE_JSON', 'Restore seluruh database JSON');
+    return { success: true };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Reset Seluruh Data Transaksional & Master untuk Persiapan Tahun Pelajaran Baru
+ * Mempertahankan akun Admin utama agar sistem tetap bisa diakses, serta mengatur Tahun Ajaran baru.
+ */
+function resetDatabaseForNewAcademicYear(options, actor) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const ss = getSpreadsheet_();
+    const keepUsers = options && options.keepUsers === true;
+    const keepSubjects = options && options.keepSubjects === true;
+    const newAcademicYear = (options && options.newAcademicYear) ? String(options.newAcademicYear).trim() : '2027/2028';
+    const newSemester = (options && options.newSemester) ? String(options.newSemester).trim() : 'Ganjil';
+
+    Object.keys(SCHEMA_DEF).forEach(sheetName => {
+      if (sheetName === 'Settings' || sheetName === 'RolePermissions' || sheetName === 'ActivityLogs' || sheetName === 'JamPelajaran') return;
+      if (sheetName === 'Users' && keepUsers) return;
+      if (sheetName === 'Subjects' && keepSubjects) return;
+
+      const sheet = ss.getSheetByName(sheetName);
+      if (!sheet) return;
+      const headers = SCHEMA_DEF[sheetName];
+      if (sheet.getLastRow() > 1) {
+        sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
+      }
+    });
+
+    // Pastikan minimal 1 akun Admin tetap ada jika Users dikosongkan
+    const usersSheet = ss.getSheetByName('Users');
+    if (usersSheet && usersSheet.getLastRow() <= 1) {
+      const adminRow = [
+        actor && actor.id ? actor.id : 'USR-ADM',
+        'admin',
+        '123456',
+        actor && actor.full_name ? actor.full_name : 'Administrator Sekolah',
+        '-',
+        'admin',
+        'AD',
+        '-',
+        'Aktif'
+      ];
+      usersSheet.appendRow(adminRow);
+    }
+
+    // Pastikan Ekstrakurikuler wajib Pramuka tetap tersedia sebagai kerangka dasar
+    const ekskulSheet = ss.getSheetByName('Ekstrakurikuler');
+    if (ekskulSheet && ekskulSheet.getLastRow() <= 1) {
+      ekskulSheet.appendRow(['EKS-01', 'Praja Muda Karana (Pramuka)', '', 'Jumat, 14:30 - 16:30 WITA', 'true', 'Pendidikan kepramukaan wajib seluruh peserta didik SMP Kristen Waibakul']);
+    }
+
+    // Perbarui Settings (Tahun Ajaran & Semester Baru)
+    const settingsSheet = ss.getSheetByName('Settings');
+    if (settingsSheet && settingsSheet.getLastRow() > 1) {
+      const sData = settingsSheet.getDataRange().getValues();
+      for (let i = 1; i < sData.length; i++) {
+        if (sData[i][0] === 'academic_year') {
+          settingsSheet.getRange(i + 1, 2).setValue(newAcademicYear);
+        } else if (sData[i][0] === 'active_semester') {
+          settingsSheet.getRange(i + 1, 2).setValue(newSemester);
+        }
+      }
+    }
+
+    logActivity(
+      actor ? actor.id : 'USR-ADM',
+      actor ? actor.full_name : 'Admin',
+      'admin',
+      'RESET_DATABASE',
+      `Reset database untuk Tahun Pelajaran ${newAcademicYear} (${newSemester}) | KeepUsers: ${keepUsers}, KeepSubjects: ${keepSubjects}`
+    );
+
+    return { success: true, newAcademicYear, newSemester };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+
+/* ============================================================================
+ * TAMBAHAN v2: Penugasan Mengajar per mapel, Anggota Ekskul, Kehadiran GTK
+ * ========================================================================== */
+
+/** Kolom jam diformat teks agar '07:15' tidak berubah menjadi tanggal 1899. Dijalankan sekali. */
+function prepareKehadiranSheet_() {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('KG_FMT_DONE')) return;
+  const sheet = getSpreadsheet_().getSheetByName('KehadiranGTK');
+  if (!sheet) return;
+  const h = SCHEMA_DEF.KehadiranGTK;
+  sheet.getRange(1, h.indexOf('jam_masuk') + 1, sheet.getMaxRows(), 2).setNumberFormat('@');
+  props.setProperty('KG_FMT_DONE', '1');
+}
+
+/** Memberi id otomatis pada baris yang ditempel langsung ke Google Sheets tanpa kolom id. */
+function fillMissingIds_(sheetName, prefix) {
+  const sheet = getSpreadsheet_().getSheetByName(sheetName);
+  if (!sheet || sheet.getLastRow() <= 1) return;
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const v = sheet.getDataRange().getValues();
+    const idIdx = SCHEMA_DEF[sheetName].indexOf('id');
+    let changed = false;
+    for (let i = 1; i < v.length; i++) {
+      const hasData = v[i].some((x, j) => j !== idIdx && String(x).trim() !== '');
+      if (hasData && !String(v[i][idIdx]).trim()) { v[i][idIdx] = generateId(prefix); changed = true; }
+    }
+    if (changed) sheet.getRange(2, idIdx + 1, v.length - 1, 1).setValues(v.slice(1).map(r => [r[idIdx]]));
+  } finally { lock.releaseLock(); }
+}
+
+/**
+ * Simpan penugasan mengajar satu kelas sekaligus.
+ * pairs: [{subject_id, teacher_id}] ; teacher_id kosong = hapus penugasan mapel tsb.
+ */
+function saveClassAssignments(classId, pairs, actor) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const ss = getSpreadsheet_();
+    const sheet = ss.getSheetByName('TeacherClasses');
+    const H = SCHEMA_DEF.TeacherClasses;
+    const data = sheet.getDataRange().getValues();
+    const ci = H.indexOf('class_id'), si = H.indexOf('subject_id'), ti = H.indexOf('teacher_id'), ii = H.indexOf('id');
+    const del = [], add = [], moved = {};
+    let upd = 0;
+    (pairs || []).forEach(p => {
+      let found = -1;
+      for (let i = 1; i < data.length; i++) {
+        if (String(data[i][ci]) === String(classId) && String(data[i][si]) === String(p.subject_id)) { found = i; break; }
+      }
+      if (found >= 0) {
+        if (!p.teacher_id) del.push(found + 1);
+        else if (String(data[found][ti]) !== String(p.teacher_id)) {
+          sheet.getRange(found + 1, ti + 1).setValue(p.teacher_id);
+          moved[String(data[found][ii])] = p.teacher_id; upd++;
+        }
+      } else if (p.teacher_id) {
+        const o = { id: generateId('TCL'), teacher_id: p.teacher_id, class_id: classId, subject_id: p.subject_id, academic_year: getSetting_('academic_year', APP_CONFIG.DEFAULT_YEAR), semester: getSetting_('active_semester', APP_CONFIG.DEFAULT_SEMESTER) };
+        add.push(H.map(h => o[h] !== undefined ? o[h] : ''));
+      }
+    });
+    // sesi pertemuan lama ikut berpindah ke guru pengampu yang baru
+    if (Object.keys(moved).length) {
+      const sS = ss.getSheetByName('AttendanceSessions'), sH = SCHEMA_DEF.AttendanceSessions;
+      const sv = sS.getDataRange().getValues(), tcI = sH.indexOf('teacher_class_id'), tI = sH.indexOf('teacher_id');
+      for (let i = 1; i < sv.length; i++) { const nt = moved[String(sv[i][tcI])]; if (nt) sS.getRange(i + 1, tI + 1).setValue(nt); }
+    }
+    del.sort((a, b) => b - a).forEach(r => sheet.deleteRow(r));
+    if (add.length) sheet.getRange(sheet.getLastRow() + 1, 1, add.length, H.length).setValues(add);
+    logActivity(actor ? actor.id : 'SYS', actor ? actor.full_name : 'System', actor ? actor.activeRole : '-', 'SAVE_CLASS_ASSIGNMENTS', `Kelas ${classId}: +${add.length} ~${upd} -${del.length}`);
+    return { success: true, added: add.length, updated: upd, removed: del.length };
+  } finally { lock.releaseLock(); }
+}
+
+/** Tambah banyak anggota ekskul sekaligus (lewati siswa yang sudah menjadi anggota). */
+function addEkskulMembers(ekskulId, studentIds, actor) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const sheet = getSpreadsheet_().getSheetByName('EkskulAssessments');
+    const H = SCHEMA_DEF.EkskulAssessments;
+    const exist = new Set(readSheetData('EkskulAssessments').filter(a => String(a.ekskul_id) === String(ekskulId)).map(a => String(a.student_id)));
+    const rows = [];
+    (studentIds || []).forEach(sid => {
+      if (exist.has(String(sid))) return;
+      exist.add(String(sid));
+      const o = { id: generateId('EKA'), ekskul_id: ekskulId, student_id: sid, predicate: 'Baik', note: '', semester: getSetting_('active_semester', APP_CONFIG.DEFAULT_SEMESTER) };
+      rows.push(H.map(h => o[h] !== undefined ? o[h] : ''));
+    });
+    if (rows.length) sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, H.length).setValues(rows);
+    logActivity(actor ? actor.id : 'SYS', actor ? actor.full_name : 'System', actor ? actor.activeRole : '-', 'ADD_EKSKUL_MEMBERS', `Ekskul ${ekskulId}: +${rows.length}`);
+    return { success: true, added: rows.length };
+  } finally { lock.releaseLock(); }
+}
+
+/**
+ * Impor rekap kehadiran Kepsek & Guru (hasil salin dari Attendance Management).
+ * rows: [{tanggal:'yyyy-MM-dd', nama, jabatan, jam_masuk, jam_pulang, status, keterangan}]
+ * Kunci unik = tanggal + nama; jika sudah ada, baris diperbarui.
+ */
+function importKehadiranGtk(rows, actor) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    prepareKehadiranSheet_();
+    const ss = getSpreadsheet_();
+    const sheet = ss.getSheetByName('KehadiranGTK');
+    const H = SCHEMA_DEF.KehadiranGTK;
+    const users = readSheetData('Users');
+    const uByName = {};
+    users.forEach(u => { uByName[String(u.full_name).trim().toLowerCase()] = u; });
+    const data = sheet.getDataRange().getValues();
+    const di = H.indexOf('tanggal'), ni = H.indexOf('nama');
+    const keyOf = (d, n) => String(d) + '|' + String(n).trim().toLowerCase();
+    const index = {};
+    for (let i = 1; i < data.length; i++) {
+      let d = data[i][di];
+      if (d instanceof Date) d = Utilities.formatDate(d, 'Asia/Makassar', 'yyyy-MM-dd');
+      index[keyOf(d, data[i][ni])] = i + 1;
+    }
+    const add = []; let updated = 0, skipped = 0;
+    (rows || []).forEach(r => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(r.tanggal)) || !String(r.nama || '').trim()) { skipped++; return; }
+      const u = uByName[String(r.nama).trim().toLowerCase()];
+      const o = {
+        tanggal: r.tanggal, nama: String(r.nama).trim(),
+        jabatan: r.jabatan || (u ? (u.role === 'kepala_sekolah' ? 'Kepala Sekolah' : 'Guru') : ''),
+        jam_masuk: r.jam_masuk || '', jam_pulang: r.jam_pulang || '', status: r.status || 'Hadir', keterangan: r.keterangan || '',
+        user_id: u ? u.id : '', sumber: 'Impor Attendance Mgmt'
+      };
+      const row = index[keyOf(o.tanggal, o.nama)];
+      if (row) {
+        const old = data[row - 1];
+        o.id = old[H.indexOf('id')];
+        sheet.getRange(row, 1, 1, H.length).setValues([H.map(h => o[h] !== undefined ? o[h] : '')]);
+        updated++;
+      } else {
+        o.id = generateId('KGT');
+        add.push(H.map(h => o[h] !== undefined ? o[h] : ''));
+        index[keyOf(o.tanggal, o.nama)] = -1;
+      }
+    });
+    if (add.length) sheet.getRange(sheet.getLastRow() + 1, 1, add.length, H.length).setValues(add);
+    logActivity(actor ? actor.id : 'SYS', actor ? actor.full_name : 'System', actor ? actor.activeRole : '-', 'IMPORT_KEHADIRAN_GTK', `+${add.length} ~${updated} lewat:${skipped}`);
+    return { success: true, added: add.length, updated: updated, skipped: skipped };
+  } finally { lock.releaseLock(); }
+}
+
+/* ============================================================================
+ * TAMBAHAN v3: Pengaturan Identitas Sekolah (menu Admin)
+ * ========================================================================== */
+
+/**
+ * Simpan (upsert per key) pengaturan identitas sekolah ke sheet Settings.
+ * values: { school_name: '...', headmaster_nip: '...', ... } — kunci di luar SCHOOL_SETTING_DEFS diabaikan.
+ * Hanya Administrator; pengecualian: perubahan durasi JP saja boleh dari guru (menu Jadwal Mengajar).
+ */
+function saveSchoolSettings(values, actor) {
+  if (!values || typeof values !== 'object') throw new Error('Data pengaturan tidak valid.');
+  const defs = {};
+  SCHOOL_SETTING_DEFS.forEach(d => { defs[d.key] = d; });
+  const keys = Object.keys(values).filter(k => defs[k]);
+  if (!keys.length) throw new Error('Tidak ada pengaturan yang dikenali.');
+
+  const onlyJp = keys.length === 1 && keys[0] === 'jp_duration_minutes';
+  if (!onlyJp && (!actor || actor.activeRole !== 'admin')) {
+    throw new Error('Hanya Administrator yang dapat mengubah identitas sekolah.');
+  }
+
+  const v = k => String(values[k] === undefined || values[k] === null ? '' : values[k]).trim();
+  const has = k => keys.indexOf(k) >= 0;
+  if (has('school_name') && !v('school_name')) throw new Error('Nama sekolah wajib diisi.');
+  if (has('headmaster_name') && !v('headmaster_name')) throw new Error('Nama kepala sekolah wajib diisi.');
+  if (has('school_npsn') && v('school_npsn') && !/^\d{8}$/.test(v('school_npsn'))) throw new Error('NPSN harus 8 digit angka.');
+  if (has('school_postal_code') && v('school_postal_code') && !/^\d{5}$/.test(v('school_postal_code'))) throw new Error('Kode pos harus 5 digit angka.');
+  if (has('school_email') && v('school_email') && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v('school_email'))) throw new Error('Format email tidak valid.');
+  if (has('academic_year')) {
+    const m = /^(\d{4})\/(\d{4})$/.exec(v('academic_year'));
+    if (!m || Number(m[2]) !== Number(m[1]) + 1) throw new Error('Tahun ajaran harus berformat 2026/2027.');
+  }
+  if (has('active_semester') && ['Ganjil', 'Genap'].indexOf(v('active_semester')) < 0) throw new Error('Semester harus Ganjil atau Genap.');
+  if (has('jp_duration_minutes')) {
+    const n = Number(v('jp_duration_minutes'));
+    if (!(n >= 1 && n <= 120) || Math.floor(n) !== n) throw new Error('Durasi 1 JP harus angka bulat 1-120 menit.');
+  }
+  ['school_logo_left', 'school_logo_right'].forEach(k => {
+    if (has(k) && v(k)) {
+      if (!/^data:image\/(png|jpeg|jpg|webp|gif);base64,/.test(v(k))) throw new Error('Format logo tidak valid (gunakan PNG/JPG).');
+      if (v(k).length > 48000) throw new Error('Ukuran logo terlalu besar. Gunakan gambar yang lebih kecil.');
+    }
+  });
+  if (has('report_date') && v('report_date') && !/^\d{4}-\d{2}-\d{2}$/.test(v('report_date'))) throw new Error('Format tanggal raport tidak valid.');
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const sheet = getSpreadsheet_().getSheetByName('Settings');
+    if (!sheet) throw new Error('Sheet Settings tidak ditemukan.');
+    sheet.getRange('B:B').setNumberFormat('@');
+    const data = sheet.getDataRange().getValues();
+    const firstRow = {}, dupRows = [];
+    for (let i = 1; i < data.length; i++) {
+      const k = String(data[i][0]);
+      if (keys.indexOf(k) < 0) continue;
+      if (firstRow[k] === undefined) firstRow[k] = i; else dupRows.push(i);
+    }
+    const changed = [], toAppend = [];
+    keys.forEach(k => {
+      const val = v(k);
+      if (firstRow[k] !== undefined) {
+        if (String(data[firstRow[k]][1]) !== val) {
+          sheet.getRange(firstRow[k] + 1, 2).setValue(val);
+          changed.push(k);
+        }
+      } else {
+        toAppend.push([k, val, defs[k].description]);
+        changed.push(k);
+      }
+    });
+    if (toAppend.length) sheet.getRange(sheet.getLastRow() + 1, 1, toAppend.length, 3).setValues(toAppend);
+    // bersihkan baris kembar (mis. akibat penyimpanan lama yang menambah baris baru terus)
+    dupRows.sort((a, b) => b - a).forEach(i => sheet.deleteRow(i + 1));
+
+    if (changed.length) {
+      logActivity(actor ? actor.id : 'SYS', actor ? actor.full_name : 'System', actor ? actor.activeRole : '-',
+        'UPDATE_IDENTITAS_SEKOLAH', 'Diubah: ' + changed.join(', '));
+    }
+    return { success: true, changed: changed };
+  } finally { lock.releaseLock(); }
+}
+
+/* ============================================================================
+ * TAMBAHAN v3: Jadwal Pelajaran (Admin), Absensi Harian, Normalisasi Data Siswa
+ * ========================================================================== */
+
+function addMinutes_(hhmm, minutes) {
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(hhmm || ''));
+  if (!m) return '';
+  const t = Number(m[1]) * 60 + Number(m[2]) + Number(minutes || 0);
+  const h = Math.floor(t / 60) % 24, mm = t % 60;
+  return ('0' + h).slice(-2) + ':' + ('0' + mm).slice(-2);
+}
+
+/** Isi 8 jam pelajaran bawaan jika sheet JamPelajaran masih kosong. */
+function ensureJamPelajaran_() {
+  const sheet = getSpreadsheet_().getSheetByName('JamPelajaran');
+  if (!sheet || sheet.getLastRow() > 1) return;
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    if (sheet.getLastRow() > 1) return;
+    applyTextCols_(sheet, 'JamPelajaran');
+    const dur = Number(getSetting_('jp_duration_minutes', '40')) || 40;
+    const rows = [];
+    for (let i = 1; i <= 8; i++) {
+      const st = addMinutes_('07:30', (i - 1) * dur);
+      rows.push(['JAM-' + i, i, st, addMinutes_(st, dur), '']);
+    }
+    sheet.getRange(2, 1, rows.length, 5).setValues(rows);
+  } finally { lock.releaseLock(); }
+}
+
+function assertRole_(actor, roles) {
+  if (!actor || roles.indexOf(actor.activeRole) < 0) throw new Error('Anda tidak memiliki hak akses untuk tindakan ini.');
+}
+
+/** Simpan seluruh daftar jam pelajaran: slots = [{slot_no, start_time, label}] */
+function saveJamPelajaran(slots, actor) {
+  assertRole_(actor, ['admin', 'waka_kurikulum']);
+  if (!Array.isArray(slots) || !slots.length) throw new Error('Minimal harus ada 1 jam pelajaran.');
+  slots.forEach(s => { if (!/^\d{1,2}:\d{2}$/.test(String(s.start_time || ''))) throw new Error('Format jam mulai tidak valid pada jam ke-' + s.slot_no); });
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const ss = getSpreadsheet_();
+    const sheet = ss.getSheetByName('JamPelajaran');
+    applyTextCols_(sheet, 'JamPelajaran');
+    const dur = Number(getSetting_('jp_duration_minutes', '40')) || 40;
+    if (sheet.getLastRow() > 1) sheet.getRange(2, 1, sheet.getLastRow() - 1, 5).clearContent();
+    const rows = slots.map((s, i) => {
+      const st = addMinutes_(s.start_time, 0);
+      return ['JAM-' + (i + 1), i + 1, st, addMinutes_(st, dur), String(s.label || '')];
+    });
+    sheet.getRange(2, 1, rows.length, 5).setValues(rows);
+    // hapus isi jadwal yang jam ke-nya sudah tidak ada
+    const jk = ss.getSheetByName('JadwalKelas');
+    const H = SCHEMA_DEF.JadwalKelas, si = H.indexOf('slot_no');
+    const vals = jk.getDataRange().getValues();
+    for (let i = vals.length - 1; i >= 1; i--) if (Number(vals[i][si]) > rows.length) jk.deleteRow(i + 1);
+    logActivity(actor.id, actor.full_name, actor.activeRole, 'UPDATE_JamPelajaran', rows.length + ' jam pelajaran');
+    return { success: true, count: rows.length };
+  } finally { lock.releaseLock(); }
+}
+
+/** Isi / kosongkan satu sel jadwal. Guru ditentukan otomatis dari Penugasan Mengajar (TeacherClasses). */
+function saveJadwalCell(day, slotNo, classId, subjectId, actor) {
+  assertRole_(actor, ['admin', 'waka_kurikulum']);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const ss = getSpreadsheet_();
+    const sheet = ss.getSheetByName('JadwalKelas');
+    const H = SCHEMA_DEF.JadwalKelas;
+    const vals = sheet.getDataRange().getValues();
+    const iD = H.indexOf('day_name'), iS = H.indexOf('slot_no'), iC = H.indexOf('class_id'), iT = H.indexOf('teacher_id');
+    let teacherId = '';
+    if (subjectId) {
+      const tc = readSheetData('TeacherClasses').find(t => String(t.class_id) === String(classId) && String(t.subject_id) === String(subjectId));
+      if (!tc) throw new Error('Mapel ini belum memiliki guru pengampu di kelas tersebut. Atur dahulu di menu Penugasan Mengajar.');
+      teacherId = tc.teacher_id;
+      for (let i = 1; i < vals.length; i++) {
+        if (String(vals[i][iD]) === String(day) && Number(vals[i][iS]) === Number(slotNo) &&
+            String(vals[i][iT]) === String(teacherId) && String(vals[i][iC]) !== String(classId)) {
+          const cn = (readSheetData('Classes').find(c => String(c.id) === String(vals[i][iC])) || {}).name || vals[i][iC];
+          const tn = (readSheetData('Users').find(u => String(u.id) === String(teacherId)) || {}).full_name || teacherId;
+          throw new Error('Bentrok jadwal: ' + tn + ' sudah mengajar di kelas ' + cn + ' pada hari dan jam yang sama.');
+        }
+      }
+    }
+    let row = -1;
+    for (let i = vals.length - 1; i >= 1; i--) {
+      if (String(vals[i][iD]) === String(day) && Number(vals[i][iS]) === Number(slotNo) && String(vals[i][iC]) === String(classId)) {
+        if (row < 0) row = i + 1; else sheet.deleteRow(i + 1);   // bersihkan baris kembar
+      }
+    }
+    if (!subjectId) {
+      if (row > 0) sheet.deleteRow(row);
+    } else if (row > 0) {
+      sheet.getRange(row, 1, 1, H.length).setValues([[sheet.getRange(row, 1).getValue(), day, Number(slotNo), classId, subjectId, teacherId]]);
+    } else {
+      sheet.appendRow([generateId('JDK'), day, Number(slotNo), classId, subjectId, teacherId]);
+    }
+    return { success: true, teacher_id: teacherId };
+  } finally { lock.releaseLock(); }
+}
+
+/** Simpan absensi harian satu kelas: records = [{student_id, status(H/S/I/A), note}] */
+function saveAbsensiHarian(date, classId, records, actor) {
+  assertRole_(actor, ['admin', 'wali_kelas']);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) throw new Error('Tanggal tidak valid.');
+  if (!Array.isArray(records) || !records.length) throw new Error('Tidak ada data absensi.');
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const ss = getSpreadsheet_();
+    const sheet = ss.getSheetByName('AbsensiHarian');
+    applyTextCols_(sheet, 'AbsensiHarian');
+    const H = SCHEMA_DEF.AbsensiHarian;
+    const vals = sheet.getDataRange().getValues();
+    const iDate = H.indexOf('absen_date'), iStu = H.indexOf('student_id');
+    const rowOf = {};
+    for (let i = 1; i < vals.length; i++) {
+      let d = vals[i][iDate];
+      if (d instanceof Date) d = Utilities.formatDate(d, 'Asia/Makassar', 'yyyy-MM-dd');
+      rowOf[String(d) + '|' + String(vals[i][iStu])] = i + 1;
+    }
+    const toAppend = [];
+    records.forEach(r => {
+      const st = ['H', 'S', 'I', 'A'].indexOf(String(r.status)) >= 0 ? String(r.status) : 'H';
+      const key = date + '|' + r.student_id;
+      if (rowOf[key]) {
+        const id = vals[rowOf[key] - 1][0];
+        sheet.getRange(rowOf[key], 1, 1, H.length).setValues([[id, date, classId, r.student_id, st, String(r.note || ''), actor.id]]);
+      } else {
+        toAppend.push([generateId('ABS'), date, classId, r.student_id, st, String(r.note || ''), actor.id]);
+      }
+    });
+    if (toAppend.length) sheet.getRange(sheet.getLastRow() + 1, 1, toAppend.length, H.length).setValues(toAppend);
+    logActivity(actor.id, actor.full_name, actor.activeRole, 'SAVE_AbsensiHarian', classId + ' ' + date + ' (' + records.length + ' siswa)');
+    return { success: true, count: records.length };
+  } finally { lock.releaseLock(); }
+}
+
+/**
+ * Rapikan data siswa yang ditempel langsung dari Google Sheets:
+ * - id kosong diisi otomatis (STD-###)
+ * - class_id dicocokkan ke Classes.id (abaikan huruf besar/kecil, spasi, tanda hubung) atau ke nama kelas (mis. "7A")
+ * - status kosong -> Aktif, gender dirapikan ke L/P
+ * - NIS/NISN/telepon dijadikan teks (angka 0 di depan dipulihkan bila hilang)
+ */
+function normalizeStudentsSheet_() {
+  const ss = getSpreadsheet_();
+  const sheet = ss.getSheetByName('Students');
+  if (!sheet || sheet.getLastRow() <= 1) return;
+
+  const H = SCHEMA_DEF.Students;
+  const n = sheet.getLastRow() - 1;
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    applyTextCols_(sheet, 'Students');
+    const rng = sheet.getRange(2, 1, n, H.length);
+    const vals = rng.getValues();
+    const formulas = rng.getFormulas();
+
+    const norm = v => String(v == null ? '' : v).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    const byKey = {};
+    readSheetData('Classes').forEach(c => {
+      const id = c.id;
+      const idText = String(c.id == null ? '' : c.id).trim();
+      const name = String(c.name || '').trim();
+      if (idText) byKey[norm(idText)] = id;
+      if (name) {
+        byKey[norm(name)] = id;
+        byKey[norm('kelas ' + name)] = id;
+      }
+    });
+
+    const ix = k => H.indexOf(k);
+    const iId = ix('id'), iNis = ix('nis'), iNisn = ix('nisn'), iName = ix('full_name');
+    const iGen = ix('gender'), iCls = ix('class_id'), iPh = ix('parent_phone'), iSt = ix('status');
+    let maxNo = 0;
+    vals.forEach(r => {
+      const m = /^STD-(\d+)$/i.exec(String(r[iId] || ''));
+      if (m) maxNo = Math.max(maxNo, Number(m[1]));
+    });
+
+    // Tulis hanya sel yang berubah; rumus pada kolom lain tetap aman.
+    vals.forEach((r, rowIdx) => {
+      if (!String(r[iName] || '').trim() && !String(r[iNis] || '').trim()) return;
+      const rowNo = rowIdx + 2;
+      const setIfChanged = (colIdx, value) => {
+        if (colIdx < 0 || formulas[rowIdx][colIdx]) return;
+        if (r[colIdx] !== value) {
+          sheet.getRange(rowNo, colIdx + 1).setValue(value);
+          r[colIdx] = value;
+        }
+      };
+
+      if (iId >= 0 && !String(r[iId] || '').trim()) {
+        maxNo++;
+        setIfChanged(iId, 'STD-' + ('00' + maxNo).slice(-3));
+      }
+
+      // class_id harus berisi ID dari sheet Classes, bukan nama tampilan rombel.
+      if (iCls >= 0 && !formulas[rowIdx][iCls]) {
+        const rawClass = String(r[iCls] == null ? '' : r[iCls]).trim();
+        const canonicalId = rawClass ? byKey[norm(rawClass)] : '';
+        if (canonicalId) setIfChanged(iCls, canonicalId);
+      }
+
+      if (iSt >= 0 && !String(r[iSt] || '').trim()) setIfChanged(iSt, 'Aktif');
+      if (iGen >= 0 && String(r[iGen] || '').trim()) {
+        const g = String(r[iGen]).trim();
+        setIfChanged(iGen, /^p/i.test(g) ? 'P' : (/^l/i.test(g) ? 'L' : g));
+      }
+      if (iNisn >= 0 && r[iNisn] !== '' && r[iNisn] != null) {
+        const v = String(r[iNisn]).trim();
+        setIfChanged(iNisn, /^\d+$/.test(v) && v.length < 10 ? ('0000000000' + v).slice(-10) : v);
+      }
+      if (iNis >= 0 && r[iNis] != null) setIfChanged(iNis, String(r[iNis]).trim());
+      if (iPh >= 0 && r[iPh] != null) {
+        let phone = String(r[iPh]).trim();
+        if (/^8\d+/.test(phone)) phone = '0' + phone;
+        setIfChanged(iPh, phone);
+      }
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * DIAGNOSA: jalankan fungsi ini dari editor Apps Script (pilih "diagnosa" -> Run), lalu buka Execution log.
+ * Menunjukkan langkah mana yang gagal bila halaman tidak tampil.
+ */
+function diagnosa() {
+  const out = [];
+  const step = (name, fn) => {
+    try { const r = fn(); out.push('OK    ' + name + (r === undefined ? '' : ' -> ' + r)); }
+    catch (e) { out.push('GAGAL ' + name + ' -> ' + e + (e && e.stack ? ' | ' + String(e.stack).split('\n')[0] : '')); }
+  };
+  step('ensureDatabaseInitialized', () => ensureDatabaseInitialized());
+  step('prepareKehadiranSheet_', () => prepareKehadiranSheet_());
+  step('ensureSchoolSettings_', () => ensureSchoolSettings_());
+  step('ensureJamPelajaran_', () => ensureJamPelajaran_());
+  step('normalizeStudentsSheet_', () => normalizeStudentsSheet_());
+  Object.keys(SCHEMA_DEF).forEach(n => step('baca sheet ' + n, () => readSheetData(n).length + ' baris'));
+  step('getInitialBootstrapData', () => { const d = getInitialBootstrapData(); return Object.keys(d).length + ' sheet, ' + JSON.stringify(d).length + ' karakter, peringatan: ' + JSON.stringify(d._warnings); });
+  Logger.log(out.join('\n'));
+  return out.join('\n');
+}
